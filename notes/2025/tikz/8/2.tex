@@ -1,0 +1,49 @@
+\documentclass[tikz]{standalone}
+
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+
+\begin{document}
+
+\begin{tikzpicture}[>=stealth, node distance=15mm]
+
+    % root internal node (feature A)
+    \node[circle,draw,minimum size=11mm,
+          label=above:{\small $A$}] (A) {};
+
+    % right leaf: predict -1, set {4,5,6,7,9}
+    \node[rectangle,draw,below right=16mm and 24mm of A,
+          minimum width=12mm,minimum height=9mm] (Rminus) {$-1$};
+
+    % left internal node (feature B)
+    \node[circle,draw,below left=16mm and 10mm of A,
+          minimum size=11mm,
+          label=left:{\small $B$}] (B) {};
+
+    % left leaf under B: +1, set {1,2}
+    \node[rectangle,draw,below left=16mm and 8mm of B,
+          minimum width=12mm,minimum height=9mm] (Lplus) {$+1$};
+
+    % right leaf under B: -1, set {3,8}
+    \node[rectangle,draw,below right=16mm and 8mm of B,
+          minimum width=12mm,minimum height=9mm] (Lminus) {$-1$};
+
+    % edges from root
+    \draw[->] (A) -- node[above left,pos=0.45] {\scriptsize yes}
+                     node[left,pos=0.55]      {\scriptsize $\{1,2,3,8\}$}
+              (B);
+    \draw[->] (A) -- node[above right,pos=0.45] {\scriptsize no}
+                     node[right,pos=0.55]       {\scriptsize $\{4,5,6,7,9\}$}
+              (Rminus);
+
+    % edges from B
+    \draw[->] (B) -- node[above left,pos=0.45] {\scriptsize yes}
+                     node[left,pos=0.65]       {\scriptsize $\{1,2\}$}
+              (Lplus);
+    \draw[->] (B) -- node[above right,pos=0.45] {\scriptsize no}
+                     node[right,pos=0.65]       {\scriptsize $\{3,8\}$}
+              (Lminus);
+
+\end{tikzpicture}
+
+\end{document}

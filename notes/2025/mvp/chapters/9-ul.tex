@@ -1,0 +1,739 @@
+\documentclass[../main]{subfiles}
+\begin{document}
+\chapter{Unsupervised Learning}
+\begin{introduction}
+    \item Dimensionality reduction
+    \item Cluster
+    \item Latent-variable models and the EM algorithm
+\end{introduction}
+All methods we have discussed so far fall under the category of \textbf{supervised learning}, where the training process relies on labeled data and the model is explicitly guided by pairs $(x,y)$.  
+In contrast, \textbf{unsupervised learning} operates without labels: the goal is to learn the underlying structure of the data and to approximate the distribution of datapoints $x$ itself.
+
+\begin{definition}[Unsupervised Learning]
+    Let $\mathcal{X}$ be an unlabeled dataset.  
+    Unsupervised learning aims to learn a mapping $f:\mathcal{X}\to\mathcal{Z}$ or a generative model $p_\theta(x)$ that captures the intrinsic structure of the underlying data distribution $p(x)$.  
+    Typical objectives include clustering, dimensionality reduction, density estimation, and representation learning.  
+    Importantly, no labeled pairs $(x,y)$ are observed during training.
+\end{definition}
+
+Unsupervised learning can be divided into several tasks:
+\begin{enumerate}
+    \item Dimensionality reduction: datapoints are often lie in high-dimensional manifold, while the dimension that really matter only contribute as a small part. Dimensionality reduction is the process to train the model to find these crutial dimension from enormous amount of dimensions.
+    \item Clustering. Train model to group similar data togather.
+    \item Generate models. Various generative model, like SoRA, LLM/GPT, are trained to learn how to generate contents like text or image by learning the distribution of the target context.
+\end{enumerate}
+\section{Dimensionality reduction}
+\subsection{Principal Component Analysis (PCA)}
+
+\begin{theorem}[Principle of PCA]
+    PCA seeks a direction $w$ (with $\|w\|=1$) along which the projected data $w^\top x$
+    achieves the \emph{maximum possible variance}.  
+    Formally, the goal is to maximize
+    \begin{equation}
+        \operatorname{Var}(w^\top X).
+    \end{equation}
+\end{theorem}
+    
+    Let the dataset be
+    \begin{equation}
+        X = 
+        \begin{pmatrix}
+            x_1^{\top} \\
+            x_2^{\top} \\
+            \vdots \\
+            x_n^{\top}
+        \end{pmatrix}
+        \in \mathbb{R}^{n\times d},
+    \end{equation}
+    with sample mean
+    \begin{equation}
+        \bar{x} = \frac{1}{n}\sum_{i=1}^n x_i .
+    \end{equation}
+    Each $x_i \in \mathbb{R}^d$ is an observation.
+    \begin{figure}[h]
+        \centering
+        \includegraphics{../../tikz/9/1.pdf}
+    \end{figure}
+    
+    The empirical covariance matrix is defined as
+    \begin{equation}
+        \Sigma = \frac{1}{n}\sum_{i=1}^n (x_i - \bar{x})(x_i - \bar{x})^{\top}
+        \in \mathbb{R}^{d\times d}.
+    \end{equation}
+    Entrywise,  
+    \begin{equation}
+        \Sigma_{jk}
+        = \frac{1}{n}\sum_{i=1}^n 
+        (x_i^{(j)} - \bar{x}^{(j)})(x_i^{(k)} - \bar{x}^{(k)}).
+    \end{equation}
+    \begin{remark}
+        The covariance matrix defined with the factor $\tfrac{1}{n}$ is technically a biased estimator of the true population covariance.  
+        The unbiased version uses $\tfrac{1}{n-1}$ instead.  
+        However, when $n$ is large, the difference between $\tfrac{1}{n}$ and $\tfrac{1}{n-1}$ is negligible:
+        \begin{equation}
+            \frac{1}{n} = \frac{1}{n-1} \left( 1 - \frac{1}{n} \right),
+        \end{equation}
+        and thus affects the covariance only by a vanishing scalar factor.
+        
+        Moreover, PCA depends solely on the \emph{eigenvectors} of the covariance matrix, i.e., the principal directions.  
+        Multiplying $\Sigma$ by any positive constant does not change its eigenvectors.  
+        Therefore, for PCA, the choice between $\tfrac{1}{n}$ and $\tfrac{1}{n-1}$ has no effect on the principal components.
+        \end{remark}
+        \begin{lemma}[Variance of a Linear Projection]
+            Let $w$ be any unit vector in $\mathbb{R}^d$.  
+            The projection of a data point $x_i$ onto $w$ is the scalar
+            \begin{equation}
+                z_i = w^\top x_i .
+            \end{equation}
+            The sample mean of the projected data is
+            \begin{equation}
+                \bar{z} = \frac{1}{n}\sum_{i=1}^n z_i
+                       = \frac{1}{n}\sum_{i=1}^n w^\top x_i
+                       = w^\top \bar{x}.
+            \end{equation}
+            Thus
+            \begin{equation}
+                z_i - \bar{z}
+                = w^\top (x_i - \bar{x}).
+            \end{equation}
+            The sample variance of the projected data is
+            \begin{equation}
+                \operatorname{Var}(w^\top X)
+                = \frac{1}{n} \sum_{i=1}^n (z_i - \bar{z})^2
+                = \frac{1}{n} \sum_{i=1}^n 
+                    \bigl( w^\top (x_i - \bar{x}) \bigr)^2 .
+            \end{equation}
+            Using the identity 
+            \[
+            (w^\top a)^2 = w^\top (a a^\top) w,
+            \]
+            we obtain
+            \begin{equation}
+                \operatorname{Var}(w^\top X)
+                = w^\top
+                  \left(
+                     \frac{1}{n}\sum_{i=1}^n (x_i - \bar{x})(x_i - \bar{x})^\top
+                  \right)
+                  w
+                = w^\top \Sigma w.
+            \end{equation}
+            \end{lemma}
+    Let $u_1$ be the unit projection vector on $\mathbb R^d$ to project each $x_i$ onto a 1-D space, then PCA is equivalent to solve the below problem
+    \begin{equation}
+        \argmax_{\|u_1\|=1}\; u_1^\top \Sigma u_1 .
+    \end{equation}
+    By introducing a Lagrange multiplier $\lambda$ for the constraint $u_1^\top u_1 = 1$, we consider the Lagrangian
+    \begin{equation}
+        \mathcal{L}(w,\lambda)
+        = u_1^\top \Sigma u_1 - \lambda \bigl( u_1^\top u_1 - 1 \bigr).
+    \end{equation}
+    Taking the derivative with respect to $u_1$ and setting it to zero gives
+    \begin{equation}
+        \frac{\partial \mathcal{L}}{\partial u_1}
+        = 2 \Sigma u_1 - 2 \lambda u_1 = 0,
+    \end{equation}
+    hence
+    \begin{equation}
+        \Sigma u_1 = \lambda u_1.
+    \end{equation}
+    The derivative with respect to $\lambda$ enforces the constraint
+    \begin{equation}
+        \frac{\partial \mathcal{L}}{\partial \lambda}
+        = -\bigl(u_1^\top u_1 - 1\bigr) = 0
+        \quad\Longrightarrow\quad
+        u_1^\top u_1 = 1.
+    \end{equation}
+    Therefore, any maximizer \textbf{$u_1$ must be an eigenvector of $\Sigma$}, with $\lambda$ equal to the corresponding eigenvalue.
+    Since
+    \begin{equation}
+        u_1^\top \Sigma u_1 = \lambda
+    \end{equation}
+    for any unit eigenvector $u_1$, the optimization problem is solved by choosing $u_1$ as the eigenvector associated with the \textbf{largest eigenvalue of $\Sigma$}.  
+    This $u_1$ is the first principal component.
+
+    After obtaining the first principal component $u_1$, the second principal component $u_2$ is defined as the direction that maximizes the projected variance subject to two constraints:
+\begin{equation}
+    \argmax_{u_2}\; u_2^\top \Sigma u_2
+\end{equation}
+subject to
+\begin{equation}
+    u_2^\top u_2 = 1,
+    \qquad
+    u_2^\top u_1 = 0.
+\end{equation}
+The first condition enforces unit length; the second ensures orthogonality to $u_1$.
+
+Introduce Lagrange multipliers $\lambda_2$ and $\alpha$.  
+Consider the Lagrangian
+\begin{equation}
+\mathcal{L}(u_2,\lambda_2,\alpha)
+    = u_2^\top \Sigma u_2
+      + \lambda_2 (1 - u_2^\top u_2)
+      + \alpha\, u_2^\top u_1.
+\end{equation}
+Taking the derivative with respect to $u_2$ and setting it to zero yields
+\begin{equation}
+    \frac{\partial \mathcal{L}}{\partial u_2}
+    = 2 \Sigma u_2 - 2 \lambda_2 u_2 + \alpha u_1 = 0.
+\end{equation}
+
+Rearranging the stationarity condition gives
+\begin{equation}
+    \Sigma u_2 = \lambda_2 u_2 - \frac{\alpha}{2} u_1.
+\end{equation}
+Using the orthogonality constraint $u_1^\top u_2 = 0$ and the fact that
+\begin{equation}
+    \Sigma u_1 = \lambda_1 u_1,
+\end{equation}
+we obtain
+\begin{equation}
+    u_1^\top \Sigma u_2 = \lambda_2\, u_1^\top u_2 - \frac{\alpha}{2} u_1^\top u_1
+    = -\frac{\alpha}{2}.
+\end{equation}
+On the other hand,
+\begin{equation}
+    u_1^\top \Sigma u_2 = (\Sigma u_1)^\top u_2 = \lambda_1 u_1^\top u_2 = 0.
+\end{equation}
+Thus $\alpha = 0$, and the stationarity condition reduces to the eigenvalue equation
+\begin{equation}
+    \Sigma u_2 = \lambda_2 u_2.
+\end{equation}
+Therefore $u_2$ must be an eigenvector of $\Sigma$ associated with the second largest eigenvalue.
+
+By induction:
+\begin{theorem}
+    The first $K$ principal components are exactly the eigenvectors of the covariance matrix $\Sigma$ corresponding to its $K$ largest eigenvalues.  
+\end{theorem}
+Denote these eigenvectors by
+\begin{equation}
+    U_{1:K}
+    = 
+(
+        u_1,u_2 ,\cdots , u_K
+)
+    \in \mathbb{R}^{d \times K}.
+\end{equation}
+Each $u_i$ satisfies$
+    \Sigma u_i = \lambda_i u_i,
+    \,
+    \lambda_1 \ge \lambda_2 \ge \cdots \ge \lambda_K.$
+
+    Given the matrix of the top $K$ principal directions $U_{1:K}$, the projection of a data point $x \in \mathbb{R}^d$ onto the $K$-dimensional PCA subspace is $
+        z = U_{1:K}^{\top} x 
+        \in \mathbb{R}^{n\times K}.
+$
+    For a dataset $X \in \mathbb{R}^{n \times d}$, the projected data matrix is
+    \begin{equation}
+        X U_{1:K}
+        \in \mathbb{R}^{n \times K}.
+    \end{equation}
+    This reduces the dimensionality from $d$ to $K$ while retaining the directions of maximal variance.
+
+    \begin{definition}[Centered Data Matrix]
+        Let the centered data matrix be
+        \begin{equation}
+            \hat{X}
+            =
+            \begin{pmatrix}
+                x_1^{\top} - \bar{x}^{\top} \\
+                x_2^{\top} - \bar{x}^{\top} \\
+                \vdots \\
+                x_n^{\top} - \bar{x}^{\top}
+            \end{pmatrix}
+            \in \mathbb{R}^{n \times d}.
+        \end{equation}
+        Each row of $\hat{X}$ is a mean-subtracted data point.
+        \end{definition}
+        
+        The empirical covariance matrix can be written compactly as
+        \begin{equation}
+            \Sigma = \frac{1}{n}\, \hat{X}^{\top}\hat{X}.
+        \end{equation}
+        
+        \begin{theorem}[Eigen-Decomposition of the Covariance]
+        Because $\Sigma$ is real symmetric, it admits an orthogonal eigendecomposition:
+        \begin{equation}
+            \Sigma
+            = U \Lambda U^{\top},
+        \end{equation}
+        where $U$ is an orthogonal matrix whose columns are eigenvectors  
+        and $\Lambda$ is a diagonal matrix containing the eigenvalues of $\Sigma$.
+        \end{theorem}
+        
+        In practice, numerical libraries such as \texttt{numpy.linalg.eig} or 
+        \texttt{numpy.linalg.eigh} compute the eigen-decomposition of $\Sigma$ directly.  
+        The eigenvectors $\{u_1,\ldots,u_d\}$ form the principal directions of the data.
+\subsection{Singular Value Decomposition (SVD)}
+        Consider the singular value decomposition of the centered data matrix:
+        \begin{equation}
+            \hat{X} = U_X\, S\, V^{\top}.
+        \end{equation}
+        \newcommand{\mblock}[2]{%
+  \begingroup
+  \setlength{\fboxsep}{1pt}%
+  \colorbox{#1!20}{$\displaystyle #2$}%
+  \endgroup
+}
+
+\begin{equation}
+  \hat{X}_{\mathbb{R}^{n\times d}}
+  =
+  \mblock{blue}{ U_{X\,\mathbb{R}^{n\times r}}}\,
+  \mblock{green}{\begin{pmatrix}
+    \sigma_1&\cdots &0&0&\cdots&0\\
+    0&\sigma_2&\cdots&0&\cdots&0\\
+    \vdots&\ddots &&&&\vdots\\
+    0&\cdots&0&\sigma_n&\cdots&0
+    \end{pmatrix} _{ \mathbb{R}^{r\times r}}}\,
+  \mblock{red}{V^{\top}_ {\mathbb{R}^{r\times d}} }.
+\end{equation}
+        Then
+        \begin{equation}
+            \hat{X}^{\top}\hat{X}
+            = V S^{2} V^{\top},
+        \end{equation}
+        which implies that
+        \begin{equation}
+            \Sigma = \frac{1}{n} V S^{2} V^{\top}.
+        \end{equation}
+        Thus \textbf{the right singular vectors of $\hat{X}$ are exactly the eigenvectors of $\Sigma$},  
+        and the eigenvalues of $\Sigma$ are the squared singular values of $\hat{X}$ scaled by $\tfrac{1}{n}$.
+
+        
+        \begin{remark}
+        This relationship provides an alternative way to compute principal components:  
+        the top $K$ principal directions are simply the first $K$ right singular vectors of $\hat{X}$.  
+        This method is numerically more stable, especially when $n \neq d$ or when $d$ is large.
+        \end{remark}
+        \begin{note}
+            In practice, computing a full SVD of a \(d\times d\) matrix costs \(O(d^3)\) time,  
+            which is prohibitive for high-dimensional data.  
+            Modern numerical linear algebra therefore relies on \emph{approximate} SVD methods  
+            that dramatically reduce the computational burden while preserving the leading singular components.
+        
+            A common approach is the \emph{truncated SVD}:  
+            instead of computing all singular values, we only approximate the top \(K\) components.  
+            Techniques such as randomized sketching, subspace iteration, and the Nyström method  
+            project the data onto a low-dimensional subspace in which SVD becomes cheap.  
+            These methods achieve a cost of roughly
+            \begin{equation*}
+                O(ndK) \quad\text{or}\quad O(d^2K),
+            \end{equation*}
+            depending on the algorithm, reducing the complexity significantly when \(K \ll d\).
+        
+            This is why real-world PCA implementations (e.g., \emph{\texttt{sklearn}, \texttt{numpy.linalg.svd}},  
+            and randomized PCA algorithms) compute only the leading singular vectors rather than performing a full decomposition.
+        \end{note}
+\subsection{t-distributed Stochastic Neighbor Embedding (t-SNE)*}
+
+t-SNE is a nonlinear dimensionality reduction method designed for visualization 
+of high-dimensional datasets.  
+It constructs two probability distributions:
+\begin{itemize}
+    \item one on the pairwise similarities in the high-dimensional space,  
+    \item one on the pairwise similarities in the low-dimensional embedding,
+\end{itemize}
+and finds an embedding that makes these two distributions as close as possible.
+
+
+\begin{definition}[High-Dimensional Similarity]
+For datapoints $x_i, x_j$ in the original space, define a conditional probability
+\begin{equation}
+    p_{j|i}
+    = \frac{\exp\left(-\|x_i - x_j\|^2 / 2\sigma_i^2\right)}
+            {\sum_{k \neq i} \exp\left(-\|x_i - x_k\|^2 / 2\sigma_i^2\right)}.
+\end{equation}
+The bandwidth $\sigma_i$ is chosen such that the \emph{perplexity}
+of the distribution matches a user-specified value.
+The symmetric joint probability is
+\begin{equation}
+    p_{ij} = \frac{p_{j|i} + p_{i|j}}{2n}.
+\end{equation}
+\end{definition}
+\begin{note}
+    It simply applies an RBF kernel to these data points.
+\end{note}
+\begin{definition}[Low-Dimensional Similarity]
+For embedding points $y_i, y_j \in \mathbb{R}^2$,  
+t-SNE uses a Student-\(t\) distribution with one degree of freedom:
+\begin{equation}
+    q_{ij}
+    =
+    \frac{\left(1 + \|y_i - y_j\|^2\right)^{-1}}
+            {\sum_{k \neq \ell}
+            \left(1 + \|y_k - y_\ell\|^2\right)^{-1}}.
+\end{equation}
+The heavy-tailed distribution alleviates the “crowding problem.”
+\end{definition}
+
+\begin{theorem}[t-SNE Objective]
+t-SNE seeks an embedding that minimizes the Kullback–Leibler divergence
+between the high-dimensional and low-dimensional similarity distributions:
+\begin{equation}
+    \mathcal{L}(Y)
+    = \mathrm{KL}(P \parallel Q)
+    = \sum_{i \neq j} p_{ij} \log \frac{p_{ij}}{q_{ij}}.
+\end{equation}
+Gradient descent on $\mathcal{L}$ yields the final visualization.
+\end{theorem}
+
+t-SNE preserves local neighborhood structure.
+Pairs with large $p_{ij}$ are forced to satisfy large $q_{ij}$, keeping  
+nearby points close.  
+The heavy-tailed $t$-distribution allows distant points to be modeled far apart,
+preventing clusters from collapsing together.
+
+t-SNE is excellent for visualization but not for general-purpose embedding:
+its geometry is not globally meaningful, and repeated runs  
+may differ due to initialization and stochasticity.
+\begin{figure}[h]
+    \centering
+    \includegraphics{../../tikz/9/2.pdf}
+\end{figure}
+\section{Clustering}
+\subsection{K-means Clustering Algorithm}
+Clustering is a fundamental task in unsupervised learning.  
+Given a dataset
+$
+    D = \{x_1, x_2, \ldots, x_n\} \subset \mathbb{R}^d,
+$
+our goal is to divide these points into \(K\) meaningful groups.  
+Here \(K\) is a user-chosen hyperparameter, reflecting how many clusters we expect to find.
+
+To formalize this idea, assume that each cluster \(k \in [K]\) is represented by a \textbf{center}
+$
+    m_k \in \mathbb{R}^d,
+$
+and each data point chooses exactly one cluster.  
+We denote the assignment using an indicator variable \(r_{ik} \in \{0,1\}\):
+\begin{equation}
+    r_{ik} = 1 
+    \quad\Longleftrightarrow\quad
+    x_i \text{ belongs to cluster } k.
+\end{equation}
+Because every point must join one and only one cluster, we enforce
+\begin{equation}
+    \sum_{k=1}^{K} r_{ik} = 1,
+    \qquad \forall i \in [n].
+\end{equation}
+
+The intuitive goal of K-means is simple:  
+each point should be close to the center of the cluster it joins.  
+This leads to the objective function
+\begin{theorem}
+    \begin{equation}
+        L =
+        \sum_{i=1}^{n}
+        \sum_{k=1}^{K}
+            r_{ik} \, \|x_i - m_k\|^2,
+    \end{equation}
+\end{theorem}
+which measures the total within-cluster variance.
+
+At first glance, minimizing \(L\) over both the assignments \(r\) and the centers \(m\) seems challenging,  
+because the problem is non-convex and the discrete variables \(r_{ik}\) make the search space combinatorial.  
+However, K-means becomes surprisingly tractable once we notice a key structural property of its objective.  
+Although optimizing both the assignments \(r\) and the centers \(m\) jointly is difficult,  
+each subproblem becomes very simple when the other variable is held fixed:
+
+\begin{itemize}
+    \item \textbf{Fixing the centers \(\{m_k\}\):}  
+    assigning each point \(x_i\) reduces to choosing the closest center.
+
+    \item \textbf{Fixing the assignments \(\{r_{ik}\}\):}  
+    updating each center becomes a simple averaging step, since the optimal \(m_k\) is just the mean of the points assigned to cluster \(k\).
+\end{itemize}
+
+This observation directly motivates the alternating minimization strategy used by the K-means algorithm:  
+we first update the assignments, then update the centers, and repeat the process until convergence.  
+The objective value decreases at every iteration, and although the algorithm is not guaranteed to reach the global optimum,  
+it converges to a stable \textbf{local minimum} in practice.
+
+\textbf{Assignment step (fix the centers).}  
+For each datapoint \(x_i\), we assign it to the nearest cluster center:
+\begin{equation}
+    r_{ik} =
+    \begin{cases}
+        1,
+        & k = \displaystyle\argmin_{j\in[K]} \|x_i - m_j\|^2, \\[6pt]
+        0,
+        & \text{otherwise}.
+    \end{cases}
+\end{equation}
+
+\textbf{Update step (fix the assignments).}  
+To update \(m_k\), we minimize the partial objective
+\begin{equation}
+    \sum_{i=1}^{n} r_{ik} \|x_i - m_k\|^2
+\end{equation}
+with respect to \(m_k\).  
+Taking the derivative and setting it to zero,
+\begin{equation}
+    \frac{\partial}{\partial m_k}
+    \sum_{i=1}^{n} r_{ik} \|x_i - m_k\|^2
+    =
+    -2 \sum_{i=1}^{n} r_{ik} (x_i - m_k)
+    = 0,
+\end{equation}
+which gives the closed-form mean update:
+\begin{equation}
+    m_k
+    =
+    \frac{\sum_{i=1}^{n} r_{ik} x_i}
+         {\sum_{i=1}^{n} r_{ik}}.
+\end{equation}
+
+\begin{remark}
+    At each iteration, K-means performs a greedy improvement step:  
+    the assignment update minimizes the objective given the centers,  
+    and the center update minimizes the objective given the assignments.  
+    Hence the objective value is non-increasing and bounded below,  
+    which guarantees convergence.
+\end{remark}
+
+\begin{remark}
+    However, precisely because each step is greedy and only optimizes a partial variable,  
+    K-means may converge to a \emph{local} minimum rather than the global optimum.  
+    Different initializations can therefore lead to different final solutions.
+\end{remark}
+
+Together, these two steps define the classical K-means iteration,  
+which alternates between assigning points to their closest centers  
+and recomputing each center as the average of its assigned datapoints.
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{../../tikz/9/3.pdf}
+\end{figure}
+\begin{note}
+At each iteration, the K-means algorithm computes the \emph{centroids} of the current approximate clusters and then uses these centroids as the new cluster centers.  
+    In other words, K-means repeatedly replaces each center with the center of mass of the points currently assigned to it.  
+\end{note}
+\subsection{Mixture of Gaussians (MoG)}  
+K-means assumes that points belonging to each cluster are concentrated around a center,  
+but it does not model the \emph{shape} or \emph{spread} of each cluster.  
+A more expressive model is the \emph{Mixture of Gaussians},  
+which assumes that points assigned to the same cluster are generated from a Gaussian distribution with its own mean and covariance.
+
+Formally, for cluster \(k \in [K]\), assume
+$
+    (x \mid z_k = 1) \sim \mathcal{N}(\mu_k,\, \Sigma_k).
+$
+Here \(z = (z_1,\ldots,z_K)\) is a latent indicator vector with
+\begin{equation}
+    z_k \in \{0,1\}, 
+    \qquad 
+    \sum_{k=1}^{K} z_k = 1.
+\end{equation}
+Thus \(z_k = 1\) indicates that \(x\) is generated from cluster \(k\).
+
+The prior distribution over latent clusters is modeled using a categorical distribution:
+\begin{equation}
+    P(z_k = 1) = \pi_k,
+    \qquad
+    0 \le \pi_k \le 1,
+    \qquad
+    \sum_{k=1}^{K} \pi_k = 1.
+\end{equation}
+
+Given the latent variable \(z\), the conditional likelihood is
+\begin{equation}
+    P(x \mid z_k = 1)
+    =
+    \mathcal{N}(x \mid \mu_k, \Sigma_k).
+\end{equation}
+
+Since MoG is a \emph{generative model}, the marginal density of \(x\) is obtained by summing over all latent clusters:
+\begin{equation}
+    P(x)
+    = 
+    \sum_{k=1}^{K}
+    P(z_k = 1)\, P(x \mid z_k = 1)
+    =
+    \sum_{k=1}^{K}
+    \pi_k \, \mathcal{N}(x \mid \mu_k, \Sigma_k).
+\end{equation}
+
+% In practice, the parameters
+% \(\{\pi_k, \mu_k, \Sigma_k\}_{k=1}^{K}\)
+% are estimated by maximizing the likelihood of the observed data,  
+% typically using the EM algorithm (Expectation–Maximization),  
+% which alternates between inferring the latent cluster probabilities and updating the Gaussian parameters.
+\begin{figure}[h]
+    \centering
+    \includegraphics{../../tikz/9/4.pdf}
+\end{figure}
+\begin{note}
+    MoG can be viewed as a soft, probabilistic extension of K-means:  
+instead of forcing each point into exactly one cluster,  
+it allows fractional responsibilities and models not only the center but also the spread and orientation of each cluster.
+\end{note}
+\section{Latent Variable Models and the EM Algorithm}
+MoG is a \emph{latent-variable} model: for each datapoint $x_i$ there is an
+unobserved cluster indicator.  We will use the lighter integer notation
+\begin{equation}
+    G_i \in \{1,2,\dots,K\},
+\end{equation}
+where $G_i=k$ means $x_i$ is generated from component $k$.
+(This is equivalent to one-hot encoding used elsewhere.)
+
+The marginal likelihood for each datapoint is
+\begin{equation}
+    p(x_i;\theta)=\sum_{k=1}^K \pi_k\,\mathcal N(x_i\mid \mu_k,\Sigma_k),
+\end{equation}
+thus the MLE objective becomes
+\begin{equation}\label{eq:ul-mog-mle}
+    \argmax_{\theta}\;
+    \sum_{i=1}^{n}
+        \log\!\left(
+            \sum_{k=1}^{K}
+                \pi_k\, \mathcal{N}(x_i \mid \mu_k, \Sigma_k)
+        \right),
+\end{equation}
+where $\theta=\{\pi_k,\mu_k,\Sigma_k\}_{k=1}^K$.
+
+\begin{remark}
+    The difficulty is the \textbf{log of a sum}, which couples all components.
+    Moreover, $\sum_k\pi_k=1$ and each $\Sigma_k$ must be positive definite,
+    making naive unconstrained gradient descent non-trivial.
+\end{remark}
+
+To derive EM in a general and reusable way, we introduce KL divergence.
+\begin{definition}[Kullback--Leibler divergence]
+    For distributions $Q,P$ on the same variable $Z$,
+    \begin{equation}
+        \mathrm{KL}(Q\|P)
+        := \mathbb E_{Z\sim Q}\!\left[\log\frac{Q(Z)}{P(Z)}\right].
+    \end{equation}
+\end{definition}
+
+\begin{proposition}\label{prop:ul-kl}
+    $\mathrm{KL}(Q\|P)\ge 0$, and $\mathrm{KL}(Q\|P)=0$ iff $Q=P$ (a.s.).
+\end{proposition}
+
+\begin{theorem}[ELBO decomposition]\label{thm:ul-elbo}
+    For any $q(z)$ and any $\theta$,
+    \begin{equation}\label{eq:ul-elbo}
+        \log p(x;\theta)
+        =
+        \underbrace{
+        \mathbb E_{z\sim q}\!\left[\log \frac{p(x,z;\theta)}{q(z)}\right]
+        }_{\mathcal L(q,\theta)\;\;(\text{ELBO})}
+        +
+        \underbrace{
+        \mathrm{KL}\!\left(q(z)\,\middle\|\,p(z\mid x;\theta)\right)
+        }_{\ge 0}.
+    \end{equation}
+    Hence $\mathcal L(q,\theta)\le \log p(x;\theta)$.
+\end{theorem}
+
+\begin{remark}
+    ELBO is commonly read as elbow in talks.
+    The bound is tight when $q(z)=p(z\mid x;\theta)$.
+\end{remark}
+
+EM alternates between optimizing the variational distribution $q$ and the model
+parameters $\theta$.
+
+\textbf{E-step (fix $\theta$).}
+Given $\theta^{(t)}$, maximize ELBO in $q$:
+\begin{equation}
+    q^{(t+1)}(z)=p(z\mid x;\theta^{(t)}),
+\end{equation}
+which drives the KL gap in \eqref{eq:ul-elbo} to $0$ at $\theta^{(t)}$.
+
+\textbf{M-step (fix $q$).}
+With $q^{(t+1)}$ fixed, update parameters by maximizing ELBO:
+\begin{equation}
+    \theta^{(t+1)}\in\argmax_{\theta}\; \mathcal L\!\left(q^{(t+1)},\theta\right).
+\end{equation}
+Because the $-\mathbb E_{q^{(t+1)}}[\log q^{(t+1)}]$ term does not depend on
+$\theta$, this is equivalent to maximizing the expected complete-data
+log-likelihood
+\begin{equation}
+    Q(\theta\mid \theta^{(t)})
+    :=
+    \mathbb E_{z\sim p(z\mid x;\theta^{(t)})}\!\left[\log p(x,z;\theta)\right].
+\end{equation}
+
+\begin{remark}
+    Repeating E-step $\rightarrow$ M-step yields a monotone (non-decreasing)
+    data log-likelihood sequence, and EM converges to a stationary point (not
+    necessarily the global optimum).
+\end{remark}
+
+\begin{proposition}[Monotonic improvement]
+    Each EM iteration does not decrease the data log-likelihood:
+    \[
+        \log p(x;\theta^{(t+1)}) \ge \log p(x;\theta^{(t)}).
+    \]
+\end{proposition}
+\begin{proof}
+    In the E-step, we choose $q^{(t+1)}(z)=p(z\mid x;\theta^{(t)})$, hence the KL
+    gap in \eqref{eq:ul-elbo} becomes $0$ at $\theta^{(t)}$ and
+    \[
+        \mathcal L(q^{(t+1)},\theta^{(t)})=\log p(x;\theta^{(t)}).
+    \]
+    In the M-step, we maximize ELBO in $\theta$, so
+    \[
+        \mathcal L(q^{(t+1)},\theta^{(t+1)})
+        \ge
+        \mathcal L(q^{(t+1)},\theta^{(t)})
+        =
+        \log p(x;\theta^{(t)}).
+    \]
+    Since ELBO is always a lower bound on $\log p(x;\theta)$, we have
+    \[
+        \log p(x;\theta^{(t+1)}) \ge \mathcal L(q^{(t+1)},\theta^{(t+1)}),
+    \]
+    which together proves the claim.
+\end{proof}
+
+
+For MoG, the complete-data likelihood for one datapoint is
+\begin{equation}
+    p(x_i,G_i=k;\theta)
+    = \pi_k\,\mathcal N(x_i\mid \mu_k,\Sigma_k).
+\end{equation}
+
+\textbf{E-step.} Compute posterior responsibilities
+\begin{equation}
+    \gamma_{ik}
+    :=
+    p(G_i=k\mid x_i;\theta^{(t)})
+    =
+    \frac{\pi_k^{(t)}\, \mathcal{N}(x_i \mid \mu_k^{(t)}, \Sigma_k^{(t)})}
+         {\sum_{j=1}^{K} \pi_j^{(t)}\, \mathcal{N}(x_i \mid \mu_j^{(t)}, \Sigma_j^{(t)})}.
+\end{equation}
+
+\textbf{M-step.} Let $N_k:=\sum_{i=1}^n\gamma_{ik}$. Then the maximizer has
+closed-form updates:
+\begin{gather}
+    \pi_k=\frac{N_k}{n},\\
+    \mu_k=\frac{1}{N_k}\sum_{i=1}^n \gamma_{ik}x_i,\\
+    \Sigma_k=\frac{1}{N_k}\sum_{i=1}^n \gamma_{ik}(x_i-\mu_k)(x_i-\mu_k)^{\top}.
+\end{gather}
+
+\begin{remark}
+    These are \textbf{soft-assignment weighted} empirical mean and covariance.
+    When responsibilities collapse to hard assignments, MoG-EM reduces to the
+    familiar K-means updates.
+\end{remark}
+
+Assume an isotropic shared covariance $\Sigma_k=\sigma^2 I$ for all $k$. Then
+\begin{equation}
+    \gamma_{ik}
+    \propto
+    \pi_k \exp\left(-\frac{\|x_i-\mu_k\|^2}{2\sigma^2}\right).
+\end{equation}
+As $\sigma\to 0$, the soft assignment concentrates on the closest mean:
+\begin{equation}
+    \gamma_{ik}
+    \to
+    \begin{cases}
+        1, & k=\argmin_j \|x_i-\mu_j\|^2,\\
+        0, & \text{otherwise}.
+    \end{cases}
+\end{equation}
+This recovers the hard assignment step of K-means, and with these hard
+assignments the M-step mean update reduces to the K-means centroid update.
+\end{document}

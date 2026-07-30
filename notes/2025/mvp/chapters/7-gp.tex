@@ -47,7 +47,7 @@ $
         p(x)
         = \frac{1}{(2\pi)^{d/2}}
           \frac{1}{\det(\Sigma)^{1/2}}
-          \exp\!\left(
+          \exp\left(
               -\frac{1}{2}(x-\mu)^\top \Sigma^{-1} (x-\mu)
           \right),
     \end{equation}
@@ -177,7 +177,7 @@ process prior on the unknown height function $f:\mathcal X\to\mathbb R$:
 The radial basis function (RBF) kernel is given by
 \begin{equation}
     k_{\mathrm{RBF}}(x,x')
-    = \sigma^{2}\exp\!\left(
+    = \sigma^{2}\exp\left(
         -\frac{\|x-x'\|^{2}}{2\ell^{2}}
       \right),
 \end{equation}
@@ -527,7 +527,7 @@ $f_\star$ is Gaussian:
         \Sigma_\star
     \bigr),
 \end{equation}
-with mean
+with posterior mean
 \begin{equation}
     \mu_\star
     = k(x_\star,X)^\top (K + \sigma^2 I)^{-1} y,
@@ -543,7 +543,7 @@ and predictive variance
     Consider the RBF kernel
     \begin{equation}
         k_\ell(x,x')
-        = \sigma_f^2 \exp\!\left(
+        = \sigma_f^2 \exp\left(
             -\frac{\|x - x'\|^2}{2\ell^2}
         \right),
     \end{equation}
@@ -564,7 +564,7 @@ and predictive variance
     Gram matrix $K_\ell$ converges to a diagonal matrix:
     \begin{equation}
         \lim_{\ell \to 0} K_\ell
-        = \sigma_f^2 I_n.
+        = \sigma_f^2 I.
     \end{equation}
 
     In the noise-free case (i.e.\ $\sigma^2 = 0$ in the observation
@@ -581,7 +581,7 @@ and predictive variance
         \qquad
         K_\ell^{-1}
         \;\longrightarrow\;
-        \frac{1}{\sigma_f^2} I_n,
+        \frac{1}{\sigma_f^2} I,
     \end{equation}
     where $e_j$ is the $j$-th standard basis vector in $\mathbb R^n$.
     Hence
@@ -595,5 +595,82 @@ and predictive variance
     exactly at every training input: each training point is matched
     perfectly by the predictive mean.
 \end{remark}
+%===================================
+From the discussion above, we know that the \emph{posterior mean} of a Gaussian
+Process provides the predictive value for a test input, while the associated
+\emph{uncertainty} can be quantified through the \emph{predictive variance}.
+The relative standard deviation is simply the square root of this predictive
+variance.
+
+Gaussian Process Regression (GPR) serves as the mathematical foundation of
+\textbf{Bayesian Optimization (BO)}, a framework for performing optimization
+when the objective function is expensive, noisy, or lacks analytic structure.
+
+\begin{definition}[Black-box Optimization]
+An optimization problem is called \emph{black-box optimization} if and only if
+the analytical form of the objective function is unknown and no gradient
+information is available.
+\end{definition}
+Since the gradient of the objective function is unavailable, gradient-based
+methods such as gradient descent cannot be applied in black-box settings.
+The only feasible operation is \emph{point-wise evaluation}: we may query the
+black box at a finite number of input locations and observe the corresponding
+outputs.
+
+Bayesian Optimization (BO) aims to construct a probabilistic surrogate model
+of the black-box function and use it to locate the maximizer of $y$ with as
+few evaluations as possible. This is particularly important when each
+evaluation is expensive, for instance in hyperparameter tuning.
+
+The typical BO procedure proceeds as follows:
+\begin{enumerate}
+    \item Randomly or uniformly select a small set of initial points
+    $x_1,\ldots,x_n$ and obtain their evaluations $y_1,\ldots,y_n$.
+    \item Fit a Gaussian Process Regression (GPR) model using the collected
+    data.
+    \item Use an acquisition function $a(x)$ to select one or a batch of new
+    query points; evaluate them, augment the dataset, and refit the GPR model.
+    \item Repeat the process until the evaluation budget is exhausted, and
+    return the point achieving the maximum observed value of $y$.
+\end{enumerate}
+Here are two commonly used acquisition functions in Bayesian Optimization:
+
+\begin{enumerate}
+    \item \textbf{Expected Improvement (EI)}:
+    \begin{equation}
+        a(x) = \mathbb{E}\big[(y(x) - y_{\max})^{+}\big],
+    \end{equation}
+    where
+    \begin{equation}
+        [z]^{+} := \max(0, z).
+    \end{equation}
+    Under the GPR model, the predictive distribution is
+    \begin{equation}
+        y(x) \sim \mathcal{N}\big(\mu(x),\, \Sigma(x)\big),
+    \end{equation}
+    so EI admits a closed-form expression obtained by integrating over the
+    tail above $y_{\max}$:
+    \begin{equation}
+        a(x)=\int_{y_{\max}}^{+\infty} \big(y(x)-y_{\max}\big)\,
+        \mathcal{N}\!\left(y(x)\,\middle|\,\mu(x),\,\Sigma(x)\right)\,
+        \mathrm{d}y(x).
+    \end{equation}
+
+    \item \textbf{Upper Confidence Bound (UCB)}:
+    \begin{equation}
+        a(x)=\mu(x) + \kappa\,\sigma(x),
+    \end{equation}
+    where $\sigma(x)$ denotes the predictive standard deviation and
+    $\kappa>0$ controls the exploration–exploitation balance.
+    In essence, UCB prefers points where the model is either promising
+    (large $\mu$) or highly uncertain (large $\sigma$).
+\end{enumerate}
+
+\begin{remark}
+    \textbf{Optuna} is a widely used automatic hyperparameter tuning library,
+    recommended in class for practical Bayesian Optimization.
+\end{remark}
+
+
 
 \end{document}

@@ -1,0 +1,955 @@
+\documentclass[../main]{subfiles}
+\begin{document}
+\chapter{Diffusion Model}
+\begin{introduction}
+    \item Diffusion as iterative generation
+    \item Markov forward noising process
+    \item Reverse denoising model
+    \item DDPM
+\end{introduction}
+
+\section{From a Physical Picture to Diffusion Models*}
+\begin{tcolorbox}
+    \vspace{0.5em}
+        \color{red!50!black}$\circledast   $\quad\emph{{This section is included out of personal interest and is not part of the course material. 
+        Readers who wish to focus solely on the course content may safely skip to the next subsection.}}
+    \vspace{0.5em}
+\end{tcolorbox}
+\subsection{Langevin Dynamics}
+Imagine a particle whose position is $x(t)\in\mathbb R^d$. Two effects act on it:
+
+\begin{enumerate}
+\item \textbf{Deterministic force (drift).} The particle feels a force pushing it toward low energy.
+      If the energy is described by a scalar potential $U(x)$, then a standard choice of force is
+      $-\nabla U(x)$.
+\item \textbf{Random perturbation (noise).} The surrounding environment (a heat bath) keeps giving
+      it tiny random kicks.
+\end{enumerate}
+
+If there were no noise, we would have an ODE
+\begin{equation}\label{eq:gradflow-ode}
+    \frac{\mathrm d x}{\mathrm dt} = -\nabla U(x).
+\end{equation}
+This is a gradient descent flow: $x(t)$ moves downhill on the energy landscape $U(x)$.
+
+To model the random kicks, we add a noise term. The clean mathematical model is an SDE (stochastic
+differential equation), called \emph{overdamped Langevin dynamics}:
+\begin{theorem}[overdamped Langevin dynamics]
+\begin{equation}\label{eq:langevin-sde}
+    \mathrm d x_t
+    =
+    -\nabla U(x_t)\,\mathrm dt
+    +
+    \sqrt{2T}\,\mathrm d W_t,
+\end{equation}
+\end{theorem}
+where $T>0$ is a constant controlling the noise strength (temperature), and $W_t$ is Brownian motion.
+Brownian motion behaves like a cumulative sum of many tiny independent random steps, and its typical
+size over a short time $\Delta t$ scales like $\sqrt{\Delta t}$, not $\Delta t$.
+\begin{remark}
+    A clean way to see the $\sqrt{t}$ scaling is to start from Gaussian
+    additivity. If $\xi_1,\dots,\xi_n$ are i.i.d.\ $\mathcal N(0,\sigma^2)$, then
+    \begin{equation}
+        \sum_{k=1}^n \xi_k \sim \mathcal N(0,n\sigma^2),
+    \end{equation}
+    so the typical size (standard deviation) is $\sqrt{n}\,\sigma$.
+
+    Now discretize time: $t=n\Delta t$. Brownian motion is defined to have
+    increments with variance equal to elapsed time,
+    \begin{equation}
+        W_{(k+1)\Delta t}-W_{k\Delta t}\sim \mathcal N(0,\Delta t).
+    \end{equation}
+    To realize such increments using standard Gaussians, take $\xi_k\sim\mathcal N(0,1)$ and set
+    \begin{equation}
+        \Delta W_k := \sqrt{\Delta t}\,\xi_k,
+    \end{equation}
+    because then $\Delta W_k\sim\mathcal N(0,\Delta t)$ as required. Summing $n$ steps gives
+    \begin{equation}
+        W_t \approx \sum_{k=1}^n \Delta W_k
+        = \sum_{k=1}^n \sqrt{\Delta t}\,\xi_k
+        \sim \mathcal N(0,n\Delta t)
+        = \mathcal N(0,t)\quad\Rightarrow\quad \mathrm dW_t\propto \sqrt{\mathrm d t}
+    \end{equation}
+\end{remark}
+
+Instead of tracking a single random trajectory, we can track the \emph{probability density}
+$p_t(x)$ of the random variable $x_t$. The Langevin dynamics \eqref{eq:langevin-sde} induces a PDE
+for $p_t$, called the \emph{Fokker--Planck equation}:
+\begin{equation}\label{eq:fokker-planck}
+    \partial_t p_t(x)
+    =
+    \nabla\cdot\!\bigl(p_t(x)\,\nabla U(x)\bigr)
+    +
+    T\,\Delta p_t(x).
+\end{equation}
+
+We can interpret the two terms as follows.
+
+\begin{itemize}
+\item The term $\nabla\cdot(p_t\nabla U)$ is a \emph{transport} term: probability mass flows along the
+      vector field $-\nabla U$.
+\item The term $T\Delta p_t$ is a \emph{diffusion} term: it spreads out the density, like heat
+      diffusion in PDE.
+\end{itemize}
+
+A classic fact is that \eqref{eq:fokker-planck} has a stationary solution of the Boltzmann form
+\begin{equation}\label{eq:boltzmann}
+    p_\infty(x) \propto \exp\bigl(-U(x)/T\bigr).
+\end{equation}
+This matches physical intuition, that the higher-energy states (large $U$) share less probability.
+
+\subsection{Score Matching}
+
+Rewrite \eqref{eq:boltzmann} as $U(x) = -T\log p_\infty(x) + \mathrm{const}$. Taking gradients gives
+\begin{equation}\label{eq:score-force}
+    -\nabla U(x) = T\,\nabla \log p_\infty(x).
+\end{equation}
+The vector field $\nabla \log p(x)$ is called the \emph{score} of the density. 
+\begin{definition}[Score]
+    The score function $\psi(x)$ of a density $p(x)$ is the gradient of the log-density:
+    \begin{equation}
+        \psi(x) := \nabla \log p(x).
+    \end{equation}
+\end{definition}
+Notice that $-\nabla U(x)$ always refers to a reservoir force field, we can say that matching a score function, i.e. matching the gradient of the log-density, is equivalent to matching a kind of force (zero-curl vector) field.
+
+This is a key conceptual link to diffusion models: if we can estimate $\nabla\log p_t(x)$, we can
+use it to guide a noisy dynamics back toward a desired distribution. Suppose the data distribution is $p_{\mathrm{data}}(x)$ on $\mathbb R^d$.
+We build a model $p_\theta(x)$ (possibly \emph{unnormalized}), and we want to learn its score $\psi_\theta(x) := \nabla_x \log p_\theta(x).$
+A naive idea is to minimize the squared distance between score fields:
+\begin{theorem}[Explicit Score Matching]
+\begin{equation}\label{eq:esm-idea}
+    \mathcal L_{\mathrm{ESM}}(\theta)
+    := \frac12 \mathbb E_{x\sim p_{\mathrm{data}}}\Big[ \| \psi_\theta(x) - \psi_{\mathrm{data}}(x)\|^2 \Big],
+    \qquad s_{\mathrm{data}}(x):=\nabla_x\log p_{\mathrm{data}}(x).
+\end{equation}
+\end{theorem}
+This objective is conceptually perfect: we are literally matching forces.
+However, it hides an impossible term: we do not know $\psi_{\mathrm{data}}(x)$. The miracle of \emph{explicit score matching} (ESM) is that the unknown score can be eliminated
+by integration by parts, leaving an objective that only depends on $\psi_\theta$ and its divergence.
+
+To solve the problem the ESM holds, we further expand \eqref{eq:esm-idea}:
+\begin{align}
+    \mathcal L_{\mathrm{ESM}}(\theta)
+    &= \frac12 \mathbb E_{p_{\mathrm{data}}}\big[\|\psi_\theta(x)\|^2\big]
+     + \frac12 \mathbb E_{p_{\mathrm{data}}}\big[\|\psi_{\mathrm{data}}(x)\|^2\big]
+     - \mathbb E_{p_{\mathrm{data}}}\big[\psi_\theta(x)^\top \psi_{\mathrm{data}}(x)\big].
+\end{align}
+The middle term does not depend on $\theta$, so we only need to handle the cross term
+\(\mathbb E_{p_{\mathrm{data}}}[\psi_\theta^\top \psi_{\mathrm{data}}]\).
+Write $p=p_{\mathrm{data}}$ and $\psi_{\mathrm{data}}=\nabla \log p$.
+Then
+\begin{align}
+    \mathbb E_{p}\big[\psi_\theta(x)^\top \psi_{\mathrm{data}}(x)\big]
+    &= \int \psi_\theta(x)^\top \nabla \log p(x)\, p(x)\,dx \\
+    &= \int \psi_\theta(x)^\top \nabla p(x)\,dx.
+\end{align}
+Integration by parts with boundary conditions gives
+\begin{equation}\label{eq:ibp-key}
+    \int \psi_\theta(x)^\top \nabla p(x)\,dx
+    = - \int p(x)\, \nabla\cdot \psi_\theta(x)\,dx
+    = -\mathbb E_{p}\big[\nabla\cdot \psi_\theta(x)\big],
+\end{equation}
+where $\nabla\cdot \psi_\theta = \sum_{i=1}^d \partial_{x_i} \psi_{\theta,i}$ is the divergence of the score function.
+
+Plugging \eqref{eq:ibp-key} back, we obtain an equivalent objective (up to a constant):
+\begin{theorem}[Implicit Score Matching]
+\begin{equation}\label{eq:esm-final}
+    \mathcal J_{\mathrm{ISM}}(\theta)
+    := \mathbb E_{x\sim p_{\mathrm{data}}}\Big[
+        \frac12 \|\psi_\theta(x)\|^2 + \nabla\cdot \psi_\theta(x)
+    \Big].
+\end{equation}
+\end{theorem}
+This is the classical score matching objective: the Implicit Score Matching (ISM). It never evaluates $p_\theta(x)$, and it does not need
+the normalization constant of $p_\theta$.
+In other words, ISM can learn an \emph{energy-based model} by only looking at forces.
+\vspace{0.5em}
+
+So far, we were matching the score of the \emph{data distribution} $p_{\mathrm{data}}$.
+But in diffusion models, we care about scores of \emph{noisy} distributions $p_t$.
+Surprisingly, it actually makes learning dramatically easier.
+
+Let $q_\sigma(\tilde x \mid x)$ be a Gaussian corruption process:
+\begin{equation}\label{eq:gaussian-corrupt}
+    \tilde x = x + \sigma \varepsilon,\qquad \varepsilon\sim\mathcal N(0,I).
+\end{equation}
+This defines a noisy marginal
+\begin{equation}
+    p_\sigma(\tilde x) = \int q_\sigma(\tilde x\mid x)\, p_{\mathrm{data}}(x)\,dx.
+\end{equation}
+Denoising score matching (DSM) learns the score of $p_\sigma(\tilde x)$,
+but it uses a training target that is \emph{explicit} and \emph{local}.
+
+A crucial identity is the score of the Gaussian kernel:
+\begin{equation}\label{eq:gaussian-score-kernel}
+    \nabla_{\tilde x} \log q_\sigma(\tilde x\mid x)
+    = -\frac{\tilde x - x}{\sigma^2}.
+\end{equation}
+Vincent's denoising formulation shows that minimizing
+\begin{equation}\label{eq:dsm}
+    \mathcal L_{\mathrm{DSM}}(\theta)
+    := \frac12 \mathbb E_{x\sim p_{\mathrm{data}}}\,
+       \mathbb E_{\tilde x\sim q_\sigma(\cdot\mid x)}
+       \Big[ \big\| \psi_\theta(\tilde x) - \nabla_{\tilde x}\log q_\sigma(\tilde x\mid x)\big\|^2 \Big]
+\end{equation}
+is (up to a constant independent of $\theta$) equivalent to score matching on the noisy marginal $p_\sigma$:
+\begin{equation}
+    \mathcal L_{\mathrm{DSM}}(\theta)
+    \equiv \frac12 \mathbb E_{\tilde x\sim p_\sigma}\left[\| \psi_\theta(\tilde x) - \frac{\tilde \varepsilon}{\sigma^2}\|^2\right] + \mathrm{const}.
+\end{equation}
+where $\tilde \varepsilon:=\tilde x-x$ is the noise injected by the corruption kernel. In other words, DSM replaces the unknown score of $p_\sigma$ by a computable
+teacher score from the corruption kernel \eqref{eq:gaussian-score-kernel}.
+\begin{remark}
+    This formula is intuitive.
+    Under Gaussian corruption $\tilde x = x + \sigma\varepsilon$, the kernel
+    $q_\sigma(\tilde x\mid x)$ corresponds to a quadratic potential centered at $x$.
+    Its score
+    \begin{equation}
+        F=-\nabla (U(x+\delta x)-U(x))=-\nabla^2U|_{x}\delta x\quad\Leftrightarrow\quad-\nabla_{\tilde x}\log q_\sigma(\tilde x\mid x)
+        = -\frac{\tilde x-x}{\sigma^2}
+    \end{equation}
+    is exactly a restoring force pointing from $\tilde x$ back to $x$.
+    Since the noisy marginal $p_\sigma$ is a local mixture of such Gaussians,
+    its score near high-density regions is well approximated by this restoring direction.
+    \end{remark}
+
+    The most extraordinary part comes.
+
+    \textbf{Interpret the noise level $\sigma$ as a time parameter.}
+    If we set a schedule $\sigma=\sigma(t)$ and define the forward corruption
+    \begin{equation}
+        x_t = x_0 + \sigma(t)\,\varepsilon,\qquad \varepsilon\sim\mathcal N(0,I),
+    \end{equation}
+    then the marginal distribution of $x_t$ is exactly the noisy marginal we wrote before:
+    \begin{equation}
+        p_t(x) \equiv p_{\sigma(t)}(x).
+    \end{equation}
+    Therefore, training a network $\psi_\theta(x,\sigma)$ on many noise levels is the same as learning
+    the time-dependent score field $\psi_\theta(x,t)\approx \nabla_x \log p_t(x)$ along the entire
+    forward diffusion trajectory. This is precisely the information needed to run the dynamics
+    backward and generate samples.
+    \subsection{Diffusion Models}
+
+    Up to this point, we have only used a \emph{static} picture of noise:
+    for each noise level $\sigma$, we define a corrupted distribution
+    $p_\sigma$ and learn its score.
+    The key insight of diffusion models is to turn this family
+    $\{p_\sigma\}_{\sigma}$ into a \emph{continuous-time evolution}.
+    
+    In other words, instead of viewing $\sigma$ merely as a hyperparameter,
+    we regard it as a time variable and explicitly define a \emph{forward stochastic dynamics}
+    that gradually transforms data into noise.
+    This dynamics should satisfy three basic requirements:
+    \begin{enumerate}
+        \item it is easy to simulate;
+        \item it progressively destroys structure in the data;
+        \item its time marginals $p_t$ are exactly the noisy distributions
+              whose scores we have learned via denoising score matching.
+    \end{enumerate}
+    
+    From the physical perspective, the most natural way to inject noise
+    continuously in time is through Brownian motion.
+    This leads us back to stochastic differential equations and Langevin dynamics.
+    
+    A particularly convenient choice is the \emph{variance-preserving} (VP) diffusion:
+    \begin{equation}\label{eq:vp-sde}
+        \mathrm d x_t
+        =
+        -\frac{1}{2}\beta(t)\,x_t\,\mathrm dt
+        +
+        \sqrt{\beta(t)}\,\mathrm d W_t,
+    \end{equation}
+    where $\beta(t)\ge 0$ is a noise schedule chosen by us.
+
+A crucial advantage of \eqref{eq:vp-sde} is that it has an explicit conditional distribution.
+Define
+\begin{equation}\label{eq:alpha-def}
+    \alpha(t) = \exp\Bigl(-\frac{1}{2}\int_0^t \beta(s)\,\mathrm ds\Bigr).
+\end{equation}
+Then one can show
+\begin{theorem}[Variance-preserving diffusion]
+\begin{equation}\label{eq:vp-marginal}
+    x_t \mid x_0 \sim \mathcal N\!\bigl(\alpha(t)\,x_0,\ (1-\alpha(t)^2)\,I\bigr).
+\end{equation}
+\end{theorem}
+\begin{proof}
+    \begin{lemma}[It\^{o} isometry]
+        Let $W_t$ be 1D Brownian motion and let $f(t)$ be an adapted process such that
+        $\mathbb E\int_0^T f(t)^2\,\mathrm dt<\infty$. Then
+        \begin{equation}
+            \mathbb E\left[\left(\int_0^T f(t)\,\mathrm dW_t\right)^2\right]
+            =
+            \mathbb E\left[\int_0^T f(t)^2\,\mathrm dt\right].
+        \end{equation}
+        In particular, $\mathbb E\!\left[\int_0^T f(t)\,\mathrm dW_t\right]=0$.
+        \end{lemma}
+    Define
+    \begin{equation}\label{eq:alpha-def-again}
+        \alpha(t) := \exp\Bigl(-\frac12\int_0^t \beta(s)\,\mathrm ds\Bigr),
+    \end{equation}
+    and consider $y_t := \alpha(t)^{-1}x_t$. Since $\alpha(t)$ is deterministic:
+    \begin{equation}
+        \mathrm d(\alpha^{-1}x_t) = \alpha^{-1}\,\mathrm d x_t + x_t\,\mathrm d(\alpha^{-1}).
+    \end{equation}
+    Compute $\mathrm d(\alpha^{-1})$ from \eqref{eq:alpha-def-again}:
+    \begin{equation}
+        \frac{\mathrm d}{\mathrm dt}\alpha(t) = -\frac12\beta(t)\alpha(t)
+        \quad\Rightarrow\quad
+        \frac{\mathrm d}{\mathrm dt}\alpha(t)^{-1} = \frac12\beta(t)\alpha(t)^{-1},
+    \end{equation}
+    That is:
+    \begin{equation}
+        \mathrm d(\alpha^{-1}) = \frac12\beta(t)\alpha(t)^{-1}\,\mathrm dt.
+    \end{equation}
+    Then:
+    \begin{align}
+        \mathrm d y_t
+        &= \alpha^{-1}\Bigl(-\frac12\beta(t)x_t\,\mathrm dt + \sqrt{\beta(t)}\,\mathrm dW_t\Bigr)
+          + x_t\Bigl(\frac12\beta(t)\alpha^{-1}\,\mathrm dt\Bigr) \\
+        &= \alpha(t)^{-1}\sqrt{\beta(t)}\,\mathrm dW_t.
+    \end{align}
+    So the drift cancels completely. Then we integrate from $0$ to $t$:
+    \begin{equation}\label{eq:yt-solution}
+        y_t = y_0 + \int_0^t \alpha(s)^{-1}\sqrt{\beta(s)}\,\mathrm dW_s
+    \end{equation}
+    hence
+    \begin{equation}\label{eq:xt-solution}
+        x_t = \alpha(t) x_0 + \alpha(t)\int_0^t \alpha(s)^{-1}\sqrt{\beta(s)}\,\mathrm dW_s.
+    \end{equation}
+
+    The It\^{o} integral has zero mean given $x_0$, so
+    \begin{equation}
+        \mathbb E[x_t\mid x_0] = \alpha(t)x_0.
+    \end{equation}
+    
+    Let
+    \begin{equation}
+        Z_t := \alpha(t)\int_0^t \alpha(s)^{-1}\sqrt{\beta(s)}\,\mathrm dW_s.
+    \end{equation}
+    Then $Z_t$ is Gaussian with mean $0$, and by It\^{o} isometry (coordinate-wise),
+    \begin{equation}\label{eq:cov-integral}
+        \mathrm{Cov}(Z_t\mid x_0)
+        =
+        \alpha(t)^2\int_0^t \beta(s)\alpha(s)^{-2}\,\mathrm ds\ \cdot I.
+    \end{equation}
+    Now observe a neat identity:
+    \begin{equation}
+        \frac{\mathrm d}{\mathrm ds}\bigl(\alpha(s)^{-2}\bigr)
+        = \beta(s)\alpha(s)^{-2},
+    \end{equation}
+    so
+    \begin{equation}
+        \int_0^t \beta(s)\alpha(s)^{-2}\,\mathrm ds
+        = \alpha(t)^{-2}-1.
+    \end{equation}
+    Plugging into \eqref{eq:cov-integral} gives
+    \begin{equation}
+        \mathrm{Cov}(Z_t\mid x_0)
+        = \alpha(t)^2(\alpha(t)^{-2}-1)\,I
+        = (1-\alpha(t)^2)\,I.
+    \end{equation}
+    
+    From \eqref{eq:xt-solution}, $x_t\mid x_0$ is an affine transform of a Gaussian It\^{o} integral,
+    hence Gaussian with the mean and covariance computed above:
+    \begin{equation}
+        x_t \mid x_0 \sim \mathcal N\!\bigl(\alpha(t)\,x_0,\ (1-\alpha(t)^2)\,I\bigr),
+    \end{equation}
+    which is exactly \eqref{eq:vp-marginal}.
+\end{proof}
+When $t$ is large and $\alpha(t)\approx 0$, $x_t$ is close to a standard Gaussian.
+
+The forward process maps complicated data distributions to simple Gaussian noise.
+To generate new samples, we need to run the process \emph{backward}:
+starting from $x_T\sim\mathcal N(0,I)$, we want to move toward $x_0$.
+
+Here is the key mathematical statement (we use it as a fact):
+if the forward dynamics is
+\begin{equation}\label{eq:general-sde}
+    \mathrm d x_t = f(x_t,t)\,\mathrm dt + g(t)\,\mathrm d W_t,
+\end{equation}
+then the reverse-time dynamics has the form
+\begin{equation}\label{eq:reverse-sde}
+    \mathrm d x_t
+    =
+    \Bigl(f(x_t,t) - g(t)^2\,\nabla_x\log p_t(x_t)\Bigr)\mathrm dt
+    +
+    g(t)\,\mathrm d \bar W_t,
+\end{equation}
+where $p_t$ is the density of $x_t$ and $\bar W_t$ is Brownian motion in reverse time.
+
+The important part is the extra term $-g(t)^2\nabla_x\log p_t(x)$. It says that the reverse dynamics
+needs the score of the time-$t$ density. For the VP choice \eqref{eq:vp-sde}, we have
+$f(x,t)=-\frac12\beta(t)x$ and $g(t)^2=\beta(t)$, so \eqref{eq:reverse-sde} becomes
+\begin{equation}\label{eq:reverse-vp}
+    \mathrm d x_t
+    =
+    \Bigl(-\frac12\beta(t)\,x_t - \beta(t)\,\nabla_x\log p_t(x_t)\Bigr)\mathrm dt
+    +
+    \sqrt{\beta(t)}\,\mathrm d \bar W_t.
+\end{equation}
+
+\subsection{Discrete DDPM}
+Equation \eqref{eq:reverse-vp} is the punchline: \emph{to reverse the diffusion, we need the score
+$\nabla_x\log p_t(x)$.}  A DDPM is essentially a practical, step-by-step way to approximate this
+reverse-time evolution.
+\begin{remark}
+    In continuous time we defined
+    \begin{equation}
+        \alpha(t)=\exp\Bigl(-\frac12\int_0^t\beta(s)\,ds\Bigr),
+    \end{equation}
+    so the VP marginal has mean factor $\alpha(t)$ and variance factor $1-\alpha(t)^2$.
+    In discrete DDPM it is standard to write $\alpha_t=1-\beta_t$ and
+    $\bar\alpha_t=\prod_{s=1}^t\alpha_s$, so the marginal mean factor is $\sqrt{\bar\alpha_t}$.
+    Thus the correspondence is simply
+    \begin{equation}
+        \alpha(t)^2 \approx \bar\alpha_t,
+        \qquad
+        \alpha(t)\approx \sqrt{\bar\alpha_t}.
+    \end{equation}
+    \end{remark}
+{Forward chain.} Choose a small step size and define a discrete Markov chain
+\begin{equation}\label{eq:ddpm-forward-rewrite}
+    q(x_t\mid x_{t-1})
+    =\mathcal N\!\bigl(\sqrt{\alpha_t}\,x_{t-1},\ (1-\alpha_t)I\bigr),
+    \qquad \alpha_t:=1-\beta_t.
+\end{equation}
+Let $\bar\alpha_t=\prod_{s=1}^t\alpha_s$. By multiplying Gaussians (or by induction), one gets the
+closed form
+\begin{equation}\label{eq:ddpm-marginal-rewrite}
+    q(x_t\mid x_0)
+    =\mathcal N\!\bigl(\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)I\bigr),
+\end{equation}
+equivalently,
+\begin{theorem}
+    \begin{equation}\label{eq:xt-eps}
+        x_t=\sqrt{\bar\alpha_t}\,x_0+\sqrt{1-\bar\alpha_t}\,\varepsilon,\qquad \varepsilon\sim\mathcal N(0,I).
+    \end{equation}
+\end{theorem}
+
+So at each time $t$, the data signal is shrunk by $\sqrt{\bar\alpha_t}$ and the rest is Gaussian noise.
+
+Then the question come up with: {what should the reverse step look like?}
+The true reverse transition $q(x_{t-1}\mid x_t)$ is generally intractable because it depends on the
+unknown data distribution. DDPMs therefore introduce a learned reverse kernel
+\begin{equation}\label{eq:ddpm-reverse-kernel}
+    p_\theta(x_{t-1}\mid x_t)=\mathcal N\!\bigl(\mu_\theta(x_t,t),\,\Sigma_t\bigr),
+\end{equation}
+where $\Sigma_t$ is usually fixed by the schedule, and the main learning problem is the mean
+$\mu_\theta$.
+
+Now comes the key bridge from \eqref{eq:reverse-vp} to DDPM:
+the reverse drift contains $-\beta(t)\nabla_x\log p_t(x)$, so \emph{the only missing ingredient is the score}.
+In discrete time, the analogous object is the score of the marginal $q(x_t)$.
+Therefore, if we can approximate $\nabla_{x_t}\log q(x_t)$, we can write down a sensible reverse mean.
+\begin{note}
+    Be careful with the placement of the time index $t$.
+    \end{note}
+From \eqref{eq:ddpm-marginal-rewrite}, the conditional density $q(x_t\mid x_0)$ is Gaussian, whose score is explicit:
+\begin{equation}\label{eq:score-conditional}
+    \nabla_{x_t}\log q(x_t\mid x_0)
+    =
+    -\frac{x_t-\sqrt{\bar\alpha_t}\,x_0}{1-\bar\alpha_t}.
+\end{equation}
+Using the reparameterization \eqref{eq:xt-eps}, we have
+\begin{equation}\label{eq:eps-from-xtx0}
+    \varepsilon=\frac{x_t-\sqrt{\bar\alpha_t}\,x_0}{\sqrt{1-\bar\alpha_t}},
+\end{equation}
+so \eqref{eq:score-conditional} can be rewritten as
+\begin{equation}\label{eq:score-eps}
+    \nabla_{x_t}\log q(x_t\mid x_0)
+    =
+    -\frac{1}{\sqrt{1-\bar\alpha_t}}\;\varepsilon.
+\end{equation}
+This equation explains a famous design choice in DDPM:
+\emph{instead of predicting the score directly, we predict the noise $\varepsilon$.} (Just like what we did in DSM.)
+If a network $\varepsilon_\theta(x_t,t)$ approximates the true $\varepsilon$ in \eqref{eq:xt-eps}, then it also gives
+an approximation of the score field at time $t$ via
+\begin{equation}\label{eq:score-from-epsnet}
+    \nabla_{x_t}\log q(x_t)\ \approx\ \psi_\theta(x_t,t)
+    :=-\frac{1}{\sqrt{1-\bar\alpha_t}}\;\varepsilon_\theta(x_t,t).
+\end{equation}
+Solving \eqref{eq:eps-from-xtx0} for $x_0$ yields an estimator
+\begin{equation}\label{eq:x0-hat}
+    \hat x_0(x_t,t)=\frac{1}{\sqrt{\bar\alpha_t}}\Bigl(x_t-\sqrt{1-\bar\alpha_t}\,\varepsilon_\theta(x_t,t)\Bigr).
+\end{equation}
+Plugging $\hat x_0$ into the Gaussian algebra for $q(x_{t-1}\mid x_t,x_0)$ gives the standard DDPM mean:
+\begin{equation}\label{eq:ddpm-mean}
+    \mu_\theta(x_t,t)
+    =
+    \frac{1}{\sqrt{\alpha_t}}
+    \Bigl(x_t-\frac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\;\varepsilon_\theta(x_t,t)\Bigr).
+\end{equation}
+\begin{proof}
+From the forward chain,
+\begin{equation}
+    q(x_t\mid x_{t-1})=\mathcal N(\sqrt{\alpha_t}\,x_{t-1},\,\beta_t I),\qquad \beta_t:=1-\alpha_t,
+\end{equation}
+and from the closed form,
+\begin{equation}
+    q(x_{t-1}\mid x_0)=\mathcal N(\sqrt{\bar\alpha_{t-1}}\,x_0,\,(1-\bar\alpha_{t-1})I).
+\end{equation}
+Conditioned on $x_0$, the pair $(x_{t-1},x_t)$ is jointly Gaussian, hence
+\begin{equation}
+    q(x_{t-1}\mid x_t,x_0)\ \propto\ q(x_t\mid x_{t-1})\,q(x_{t-1}\mid x_0)
+\end{equation}
+is also Gaussian. Since both factors have isotropic covariance, the mean can be obtained by
+completing the square:
+\begin{align}
+    \log q(x_{t-1}\mid x_t,x_0)
+    &= -\frac{1}{2\beta_t}
+    \Bigl(
+        \alpha_t \|x_{t-1}\|^2
+        - 2\sqrt{\alpha_t}\,x_t^\top x_{t-1}
+    \Bigr) \notag \\
+    &\quad -\frac{1}{2(1-\bar\alpha_{t-1})}
+    \Bigl(
+        \|x_{t-1}\|^2
+        - 2\sqrt{\bar\alpha_{t-1}}\,x_0^\top x_{t-1}
+    \Bigr)
+    + \mathrm{const} \notag \\
+    &= -\frac{1}{2}
+    \Biggl[
+        \left(
+            \frac{\alpha_t}{\beta_t}
+            + \frac{1}{1-\bar\alpha_{t-1}}
+        \right)\|x_{t-1}\|^2
+        - 2
+        \left(
+            \frac{\sqrt{\alpha_t}}{\beta_t}x_t
+            + \frac{\sqrt{\bar\alpha_{t-1}}}{1-\bar\alpha_{t-1}}x_0
+        \right)^\top x_{t-1}
+    \Biggr]
+    + \mathrm{const} \notag \\
+    &= -\frac{A}{2}
+    \Biggl[
+        \|x_{t-1}\|^2 - 2\left(\frac{b}{A}\right)^\top x_{t-1}
+    \Biggr]
+    + \mathrm{const} \notag \\
+    &= -\frac{A}{2}\Biggl[
+        \left\|x_{t-1}-\frac{b}{A}\right\|^2
+        - \left\|\frac{b}{A}\right\|^2
+    \Biggr]
+    + \mathrm{const} \notag \\
+    &= -\frac{1}{2\tilde\beta_t}\left\|x_{t-1}-\tilde\mu_t(x_t,x_0)\right\|^2+\mathrm{const},
+\end{align}
+where:
+\begin{align}
+    A &:= \frac{\alpha_t}{\beta_t}+\frac{1}{1-\bar\alpha_{t-1}}
+    = \frac{\alpha_t(1-\bar\alpha_{t-1})+\beta_t}{\beta_t(1-\bar\alpha_{t-1})}
+    = \frac{1-\bar\alpha_t}{\beta_t(1-\bar\alpha_{t-1})}, \notag\\
+    b &:= \frac{\sqrt{\alpha_t}}{\beta_t}x_t+\frac{\sqrt{\bar\alpha_{t-1}}}{1-\bar\alpha_{t-1}}x_0, \notag\\
+    \tilde\beta_t &:= \frac{1}{A}=\frac{\beta_t(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}, \notag\\
+    \tilde\mu_t(x_t,x_0) &:= \frac{b}{A}
+    = \frac{\beta_t(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}
+      \left(\frac{\sqrt{\alpha_t}}{\beta_t}x_t+\frac{\sqrt{\bar\alpha_{t-1}}}{1-\bar\alpha_{t-1}}x_0\right) \notag\\
+    &= \frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}\,x_t
+     + \frac{\sqrt{\bar\alpha_{t-1}}\beta_t}{1-\bar\alpha_t}\,x_0.
+\end{align}
+where we used $\bar\alpha_t=\alpha_t\bar\alpha_{t-1}$ and $\beta_t=1-\alpha_t$.
+
+Now DDPM replaces the unknown $x_0$ by the estimator $\hat x_0(x_t,t)$:
+\begin{equation}
+    \mu_\theta(x_t,t):=\tilde\mu(x_t,\hat x_0(x_t,t)).
+\end{equation}
+Substituting
+\begin{equation}
+    \hat x_0(x_t,t)=\frac{1}{\sqrt{\bar\alpha_t}}\Bigl(x_t-\sqrt{1-\bar\alpha_t}\,\varepsilon_\theta(x_t,t)\Bigr)
+\end{equation}
+and simplifying yields the standard DDPM mean
+\begin{equation}
+    \mu_\theta(x_t,t)
+    =
+    \frac{1}{\sqrt{\alpha_t}}
+    \Bigl(x_t-\frac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\varepsilon_\theta(x_t,t)\Bigr).
+\end{equation}
+\end{proof}
+Then a sampling step is simply
+\begin{equation}\label{eq:ddpm-sample-step}
+    x_{t-1} = \mu_\theta(x_t,t) + \sigma_t z,\qquad z\sim\mathcal N(0,I),
+\end{equation}
+with a chosen variance $\sigma_t^2$ (often related to $\beta_t$).
+
+Because \eqref{eq:xt-eps} provides the true noise $\varepsilon$, we can train $\varepsilon_\theta$ by regression:
+\begin{equation}\label{eq:ddpm-loss}
+    \mathcal L(\theta)=\mathbb E_{t}\,\mathbb E_{x_0\sim p_{\mathrm{data}}}\,
+    \mathbb E_{\varepsilon\sim\mathcal N(0,I)}
+    \Bigl[\|\varepsilon-\tilde\varepsilon_\theta(x_t,t)\|^2\Bigr],
+\end{equation}
+where $x_t$ is constructed from $x_0,\varepsilon$ by \eqref{eq:xt-eps}.
+Comparing \eqref{eq:ddpm-loss} with \eqref{eq:score-from-epsnet}, we see that DDPM training is just
+a denoising-score-matching objective in disguise.
+
+Therefore, the reverse SDE \eqref{eq:reverse-vp} tells us \emph{what information is needed} (the score) and DDPM shows \emph{how to obtain it in practice}.
+\begin{tcolorbox}
+    Although this section is intended only as a physical and conceptual supplement,
+    it has in fact walked through a nearly complete derivation of diffusion models
+    from first principles.
+    Readers who are less interested in the mathematical or physical details may
+    safely skip the derivations and focus on the final conclusions in the following
+    sections, which are all that is needed for practical understanding and use.
+\end{tcolorbox}
+\section{Denoising Diffusion Probabilistic Models (DDPM)}
+Unlike VAE-style \emph{one-shot} generation, where one samples a low-dimensional
+latent variable $z\sim\mathcal N(0,I)$ and decodes it in a single step, diffusion
+models generate samples through a sequence of \emph{many} small transformations.
+
+Specifically, we choose a large time horizon $T$ (e.g.\ $T=1000$) and begin from
+pure Gaussian noise $x_T\sim\mathcal N(0,I)$, then progressively denoise:
+\[
+    x_T \to x_{T-1} \to \cdots \to x_1 \to x_0.
+\]
+The final state $x_0$ lies in the \emph{same} space as the data (e.g.\ an image
+vector in $\mathbb R^d$), while all intermediate states are unobserved and serve
+as latent variables that mediate this gradual transformation.
+
+\begin{center}
+    \includegraphics{../../tikz/11/1.pdf}
+\end{center}
+
+\begin{remark}
+    In the diffusion literature, the \emph{forward} process refers to the gradual
+    noising transformation $x_0\mapsto x_T$, whereas the \emph{reverse} process
+    refers to the denoising transformation $x_T\mapsto x_0$. Importantly, the
+    reverse process is the actual \emph{generative} procedure.
+\end{remark}
+
+\begin{remark}
+    It is remarkable that meaningful content,ranging from natural images to
+    molecular structures, can be generated starting from pure noise.
+\end{remark}
+Motivated by this perspective, we model diffusion as a latent-variable
+probabilistic model defined by a Markov chain
+\[
+    x_0, x_1, \dots, x_T \in \mathbb R^d,
+\]
+where only $x_0$ is observed (the training data) and all $x_1,\dots,x_T$ are
+latent. The conditional-independence structure is a simple chain.
+
+% \begin{center}
+%     \includegraphics{../../tikz/11/2.pdf}
+% \end{center}
+
+\begin{note}
+This is another latent-variable maximum-likelihood problem (similar in spirit to VAE), but with \emph{many} latent variables.
+Directly computing $p_\theta(x_0)$ requires marginalizing all $x_{1:T}$ and is intractable.
+\end{note}
+
+We model the reverse denoising chain as
+\begin{equation}
+    p_\theta(x_{0:T})
+    = p(x_T)\prod_{t=1}^{T} p_\theta(x_{t-1}\mid x_t),
+\end{equation}
+with the {prior} $p(x_T)=\mathcal N(0,I).$
+For continuous-valued variables, we typically parameterize each reverse transition as Gaussian:
+\begin{equation}
+    p_\theta(x_{t-1}\mid x_t)
+    = \mathcal N\!\bigl(\mu_\theta(x_t,t),\, \Sigma_\theta(x_t,t)\bigr).
+\end{equation}
+In practice, both $\mu_\theta$ and $\Sigma_\theta$ are produced by neural networks that take $x_t$ as input;
+it is also common to explicitly feed the time index $t$ (or a time embedding) so that the network can distinguish
+different denoising steps.
+
+We want to maximize the data log-likelihood $\argmax_\theta\ \log p_\theta(x_0),$
+which is intractable due to latent-variable marginalization.
+Introduce a variational distribution $q(x_{1:T}\mid x_0),$
+to approximate the true posterior $p_\theta(x_{1:T}\mid x_0)$.
+By the standard variational identity we mentioned last chapter,
+\begin{equation}
+    \log p_\theta(x_0)
+    = \mathcal L_{\mathrm{ELBO}}(x_0;\theta)
+      + \mathrm{KL}\!\left(q(x_{1:T}\mid x_0)\,\|\,p_\theta(x_{1:T}\mid x_0)\right),
+\end{equation}
+where the evidence lower bound (ELBO) is
+\begin{equation}
+    \mathcal L_{\mathrm{ELBO}}(x_0;\theta)
+    := \mathbb E_{q(x_{1:T}\mid x_0)}\!\left[
+        \log \frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}
+    \right].
+\end{equation}
+Maximizing ELBO is equivalent to maximizing $\log p_\theta(x_0)$ when the variational posterior matches the true posterior.
+
+In DDPM, the variational distribution $q$ is chosen as a \textbf{fixed} Markov noising process:
+\begin{equation}
+    q(x_{1:T}\mid x_0) = \prod_{t=1}^{T} q(x_t\mid x_{t-1}),
+\end{equation}
+with
+\begin{theorem}
+    \begin{equation}\label{eq:ddpm-forward}
+        q(x_t\mid x_{t-1})
+        = \mathcal N\!\left(\sqrt{\alpha_t}\,x_{t-1},\ (1-\alpha_t)I\right),
+        \qquad \alpha_t\in(0,1).
+    \end{equation}
+\end{theorem}
+\begin{remark}
+    Here we write the forward step as
+    \begin{equation}
+        x_t=\sqrt{\alpha_t}\,x_{t-1}+\sqrt{1-\alpha_t}\,\varepsilon_t,
+        \qquad \varepsilon_t\sim\mathcal N(0,I),
+    \end{equation}
+    rather than using $\alpha_t$ and $(1-\alpha_t)$ directly, for a simple variance reason. If $x_{t-1}$ has (approximately) unit covariance and is independent of $\varepsilon_t$, then
+    \begin{equation}
+        \mathrm{Cov}(x_t)
+        =
+        \alpha_t\,\mathrm{Cov}(x_{t-1})+(1-\alpha_t)\,\mathrm{Cov}(\varepsilon_t)
+        \approx \alpha_t I + (1-\alpha_t)I = I.
+    \end{equation}
+    So $\alpha_t$ represents the \emph{fraction of variance} preserved from the previous state, while
+    $1-\alpha_t$ is the \emph{fraction of variance} injected as fresh Gaussian noise.
+    Using the square-roots makes the coefficients act on standard deviations, ensuring the variances add
+    linearly and the overall scale of $x_t$ stays stable across many steps.
+    \end{remark}
+The sequence $\{\alpha_t\}$ is a \textbf{noise schedule} (hyperparameters); typically $\alpha_t$ gradually decreases
+so that later steps inject more noise.
+
+\begin{remark}
+Unlike the VAE encoder $q_\phi(z\mid x)$, the forward chain \eqref{eq:ddpm-forward} is \emph{pre-specified} and contains no learnable parameters.
+This guarantees that, with a suitable schedule, $x_T$ becomes (approximately) standard Gaussian without needing an explicit KL regularizer.
+\end{remark}
+Define
+\begin{equation}
+    \bar \alpha_t := \prod_{s=1}^{t} \alpha_s,\qquad \bar\alpha_0:=1.
+\end{equation}
+Then one can show by recursion (using Gaussian reparameterization and Gaussian-additivity) that
+\begin{equation}\label{eq:ddpm-qxt-x0}
+    q(x_t\mid x_0)
+    = \mathcal N\!\left(\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)I\right),
+\end{equation}
+equivalently,
+\begin{equation}\label{eq:ddpm-reparam}
+    x_t
+    = \sqrt{\bar\alpha_t}\,x_0
+      + \sqrt{1-\bar\alpha_t}\,\varepsilon,
+    \qquad \varepsilon\sim\mathcal N(0,I).
+\end{equation}
+
+\begin{remark}
+    {eq:ddpm-reparam} implies we can sample $x_t$ from $x_0$ in \emph{one} shot without simulating the entire chain.
+This is crucial for efficient training.
+\end{remark}
+
+From \eqref{eq:ddpm-qxt-x0}, if $\bar\alpha_T\approx 0$ (achieved by large $T$ and a decreasing schedule),
+then
+\[
+    q(x_T\mid x_0)\approx \mathcal N(0,I),
+\]
+so the end state is close to an isotropic Gaussian noise, matching the reverse-process prior $p(x_T)$.
+
+The ELBO contains terms involving both $q$ and $p_\theta$.
+A key trick is to work with the {forward posterior \textbf{conditioned on $x_0$}}: $q(x_{t-1}\mid x_t,x_0).$
+Although $q(x_{t-1}\mid x_t)$ is generally intractable, conditioning on $x_0$ makes it tractable because
+all relevant terms admit closed forms: $q(x_t\mid x_{t-1})$, $q(x_{t-1}\mid x_0)$, and $q(x_t\mid x_0)$.
+By Bayes' rule,
+\begin{equation}\label{eq:ddpm-bayes}
+    q(x_{t-1}\mid x_t,x_0)
+    =\frac{q(x_t\mid x_{t-1})\,q(x_{t-1}\mid x_0)}{q(x_t\mid x_0)}
+\end{equation}
+
+\begin{theorem}[DDPM posterior is Gaussian]\label{thm:ddpm-posterior}
+Under the Gaussian forward process \eqref{eq:ddpm-forward}, the conditional distribution
+\(
+    q(x_{t-1}\mid x_t,x_0)
+\)
+is Gaussian:
+\begin{equation}
+    q(x_{t-1}\mid x_t,x_0)
+    = \mathcal N\!\bigl(\tilde\mu_t(x_t,x_0),\,\tilde\beta_t I\bigr),
+\end{equation}
+where writing $\beta_t:=1-\alpha_t$ and $\bar\alpha_t=\prod_{s=1}^t\alpha_s$,
+\begin{equation}\label{eq:ddpm-posterior-var}
+    \tilde\beta_t
+    := \frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\,\beta_t,
+\end{equation}
+and the posterior mean can be expressed as
+\begin{equation}\label{eq:ddpm-posterior-mean-x0}
+    \tilde\mu_t(x_t,x_0)
+    :=
+    \frac{\sqrt{\bar\alpha_{t-1}}\beta_t}{1-\bar\alpha_t}\,x_0
+    + \frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}\,x_t.
+\end{equation}
+\end{theorem}
+A detailed derivation can be found in the supplementary section earlier in this note.
+
+\begin{remark}
+\begin{equation}\label{eq:ddpm-posterior-mean-eps}
+    \tilde\mu_t(x_t,\varepsilon)
+    =
+    \frac{1}{\sqrt{\alpha_t}}
+    \left(
+        x_t - \frac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\varepsilon
+    \right),
+\end{equation}
+Then we can apply reparameterization trick.
+\end{remark}
+
+Expand the ELBO using the Markov factorizations of $p_\theta$ and $q$:
+\begin{equation}
+    \mathcal L_{\mathrm{ELBO}}(x_0;\theta)
+    = \mathbb E_{q(x_{1:T}\mid x_0)}\!\left[
+        \log p(x_T)
+        + \sum_{t=1}^{T}\log p_\theta(x_{t-1}\mid x_t)
+        - \sum_{t=1}^{T}\log q(x_t\mid x_{t-1})
+    \right].
+\end{equation}
+Rearranging yields a standard DDPM form:
+\begin{equation}\label{eq:ddpm-elbo-kl}
+    \mathcal L_{\mathrm{ELBO}}(x_0;\theta)
+    =
+    -\mathrm{KL}\!\left(q(x_T\mid x_0)\,\|\,p(x_T)\right)
+    + \mathbb E_q\!\left[\log p_\theta(x_0\mid x_1)\right]
+    - \sum_{t=2}^{T}\mathbb E_q\!\left[
+        \mathrm{KL}\!\left(q(x_{t-1}\mid x_t,x_0)\,\|\,p_\theta(x_{t-1}\mid x_t)\right)
+    \right].
+\end{equation}
+\begin{proof}
+Use the identity
+\begin{equation}\label{eq:two-factorizations}
+    q(x_{1:T}\mid x_0)
+    = q(x_T\mid x_0)\prod_{t=2}^T q(x_{t-1}\mid x_t,x_0),
+\end{equation}
+which implies
+\begin{equation}\label{eq:logq-rewrite}
+    \sum_{t=1}^T \log q(x_t\mid x_{t-1})
+    = \log q(x_T\mid x_0) + \sum_{t=2}^T \log q(x_{t-1}\mid x_t,x_0).
+\end{equation}
+Substitute \eqref{eq:logq-rewrite} into the ELBO:
+\begin{align}
+\mathcal L_{\mathrm{ELBO}}(x_0;\theta)
+&= \mathbb E_q\!\left[
+\log p(x_T) - \log q(x_T\mid x_0)
+\right]
++ \mathbb E_q\!\left[\log p_\theta(x_0\mid x_1)\right] \\
+&\quad + \sum_{t=2}^T \mathbb E_q\!\left[
+\log p_\theta(x_{t-1}\mid x_t) - \log q(x_{t-1}\mid x_t,x_0)
+\right].
+\end{align}
+Now recognize KL divergences. The first expectation depends only on $x_T\sim q(x_T\mid x_0)$:
+\begin{equation}
+\mathbb E_q\!\left[
+\log p(x_T) - \log q(x_T\mid x_0)
+\right]
+= -\mathrm{KL}\!\left(q(x_T\mid x_0)\,\|\,p(x_T)\right).
+\end{equation}
+For each $t\ge 2$, conditioning on $(x_t,x_0)$, we have
+\begin{equation}
+\mathbb E_q\!\left[
+\log p_\theta(x_{t-1}\mid x_t) - \log q(x_{t-1}\mid x_t,x_0)
+\right]
+= -\mathbb E_q\!\left[
+\mathrm{KL}\!\left(q(x_{t-1}\mid x_t,x_0)\,\|\,p_\theta(x_{t-1}\mid x_t)\right)
+\right].
+\end{equation}
+Putting the terms together yields \eqref{eq:ddpm-elbo-kl}.
+\end{proof}
+\begin{remark}
+\begin{itemize}
+    \item The prior KL term is usually treated as a constant (it contains no learnable parameters).
+    \item The $t=1$ reconstruction term $\mathbb E_q[\log p_\theta(x_0\mid x_1)]$ is sometimes ignored or folded into the $t=1$ case.
+    \item The main training signal comes from the sum of KL terms for $t=2,\dots,T$.
+\end{itemize}
+\end{remark}
+
+We choose $p_\theta(x_{t-1}\mid x_t)$ as Gaussian and parameterize its mean to mirror \eqref{eq:ddpm-posterior-mean-eps}:
+\begin{equation}\label{eq:ddpm-ptheta-mean-eps}
+    \mu_\theta(x_t,t)
+    :=
+    \frac{1}{\sqrt{\alpha_t}}
+    \left(
+        x_t - \frac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\varepsilon_\theta(x_t,t)
+    \right),
+\end{equation}
+where $\varepsilon_\theta(x_t,t)$ is a neural network (typically U-Net) that predicts the injected noise.
+For the variance, a common simplification is to fix
+\begin{equation}
+    \Sigma_\theta(x_t,t) = \sigma_t^2 I,
+\end{equation}
+with $\sigma_t$ set by a schedule (often related to $\beta_t=1-\alpha_t$), rather than learned.
+
+\begin{remark}
+    Why not learn the variance? Learning variances introduces log-determinants and matrix inverses in the Gaussian KL closed form, making optimization harder.
+Empirically, matching the \emph{mean} (or equivalently the denoising direction) is most important.
+\end{remark}
+
+Because both $q(x_{t-1}\mid x_t,x_0)$ and $p_\theta(x_{t-1}\mid x_t)$ are Gaussians, each KL term in \eqref{eq:ddpm-elbo-kl} has a closed form.
+Under the parameterization \eqref{eq:ddpm-ptheta-mean-eps} and with fixed variances,
+each KL term in \eqref{eq:ddpm-elbo-kl} reduces to a squared difference between
+the posterior mean $\tilde\mu_t(x_t,x_0)$ and the model mean $\mu_\theta(x_t,t)$.
+Since both means can be written as linear functions of the injected noise $\varepsilon$,
+minimizing the KL is equivalent (up to a time-dependent weight) to matching noises:
+\begin{equation}\label{eq:ddpm-simple-loss}
+    \mathcal L_{\mathrm{simple}}(\theta)
+    :=
+    \mathbb E_{x_0\sim p_{\mathrm{data}}}
+    \mathbb E_{t\sim\mathrm{Unif}(\{1,\dots,T\})}
+    \mathbb E_{\varepsilon\sim\mathcal N(0,I)}
+    \left[
+        \left\|
+            \varepsilon
+            - \varepsilon_\theta\!\left(
+                \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\varepsilon,\ t
+            \right)
+        \right\|_2^2
+    \right].
+\end{equation}
+The original derivation yields a per-step scaling weight; many implementations drop the weight and still obtain strong performance.
+
+\begin{algorithm}[H]
+\caption{DDPM training (noise prediction)}
+\begin{algorithmic}[1]
+\Require dataset $\{x_0\}$, noise schedule $\{\alpha_t\}_{t=1}^T$, model $\varepsilon_\theta(\cdot,\cdot)$
+\Repeat
+    \State Sample a data point $x_0\sim p_{\mathrm{data}}$
+    \State Sample a timestep $t\sim\mathrm{Unif}(\{1,\dots,T\})$
+    \State Sample noise $\varepsilon\sim\mathcal N(0,I)$
+    \State Form $x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\varepsilon$
+    \State Take a gradient step on $\left\|\varepsilon - \varepsilon_\theta(x_t,t)\right\|_2^2$
+\Until{converged}
+\end{algorithmic}
+\end{algorithm}
+
+To generate a sample, initialize $x_T\sim\mathcal N(0,I)$ and iterate backward:
+\begin{equation}\label{eq:ddpm-sampling-step}
+    x_{t-1}
+    =
+    \mu_\theta(x_t,t) + \sigma_t z,
+    \qquad
+    z\sim\mathcal N(0,I),
+\end{equation}
+where $\sigma_t^2$ is typically chosen to match the forward variance,
+e.g.\ $\sigma_t^2=\beta_t$ or $\tilde\beta_t$, for $t=T,T-1,\dots,1$, with the convention $z=0$ at $t=1$ (do not re-inject noise at the last step).
+Substitute \eqref{eq:ddpm-ptheta-mean-eps} for $\mu_\theta$ to obtain the commonly used update:
+\begin{equation}
+    x_{t-1}
+    =
+    \frac{1}{\sqrt{\alpha_t}}
+    \left(
+        x_t - \frac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\,\varepsilon_\theta(x_t,t)
+    \right)
+    + \sigma_t z.
+\end{equation}
+
+\section{Practical Implementation of Diffusion Models}
+\begin{itemize}
+    \item The noise network $\varepsilon_\theta(x_t,t)$ maps an input tensor to an output tensor of the \emph{same shape},
+    which naturally matches \textbf{U-Net} (encoder--decoder with skip connections):\begin{center}
+        \includegraphics[width=0.6\textwidth]{../../fig/unet.pdf}
+    \end{center}
+    \item Recent diffusion systems also use transformer backbones (Diffusion Transformer, \textbf{DiT}) as the denoiser.
+    The probabilistic formulation remains similar; the main difference is the architecture used to represent $\varepsilon_\theta$.
+    \item \textbf{Latent diffusion}: DDPM operates in pixel space, which can be costly for high-resolution images.
+    Latent diffusion uses a pretrained autoencoder (e.g.\ a VAE):
+    \begin{itemize}
+        \item Encode $x$ to a latent $z=\mathrm{Enc}(x)$.
+        \item Run diffusion in latent space to model $p(z)$ or $p(z\mid y)$.
+        \item Decode $\hat x=\mathrm{Dec}(z_0)$ back to pixel space.
+    \end{itemize}
+    This reduces the dimensionality of the denoiser input/output and accelerates training and sampling.
+    \item \textbf{Conditional generation}: To control what is generated (e.g.\ ``cat'' vs.\ ``dog''), one trains a conditional model $p_\theta(x\mid y)$
+    by providing paired data $(x_0,y)$ and feeding $y$ (or a text prompt embedding) into the denoiser.
+    Practical systems often use techniques such as classifier-free guidance.
+    \item \textbf{Flow matching / rectified flow }
+    Diffusion can be viewed as learning a trajectory from noise to data.
+    Flow matching methods aim to learn a simpler transport, often a straight-line path, by predicting a velocity field.
+    At a high level, sample an interpolation point between noise $g$ and data $x$ and learn to predict the direction (velocity) pointing from $g$ to $x$.
+\end{itemize}
+\end{document}
