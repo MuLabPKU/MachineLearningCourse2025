@@ -1,0 +1,80 @@
+\documentclass[tikz,border=5pt]{standalone}
+\usepackage{amsmath}
+\usetikzlibrary{arrows.meta,positioning,calc}
+
+% -------------------- Hyperparameters --------------------
+\newcommand{\BoxW}{1.cm}     % default node width
+\newcommand{\BoxH}{0.90cm}     % default node height
+\newcommand{\BoxWBig}{1.60cm}  % width for x_{T-1} (or other special nodes)
+\newcommand{\StepA}{2.20cm}    % x0 -> x1 spacing
+\newcommand{\StepB}{0.5cm}    % spacing around dots / intermediate
+\newcommand{\StepC}{2.00cm}    % x_{T-1} -> x_T spacing
+\newcommand{\RevDrop}{1.25cm}  % vertical drop for reverse arrow line
+\newcommand{\LW}{0.9pt}        % line width for arrows
+\newcommand{\RevColor}{blue}   % reverse arrow color
+\newcommand{\RoundR}{2pt}      % rounded corner radius
+\newcommand{\DotSep}{0pt}      % inner sep for dots nodes
+\newcommand{\LabShift}{-2pt}   % label y-shift for reverse arrow label
+% ---------------------------------------------------------
+
+% Styles (centralized)
+\tikzset{
+  state/.style={
+    draw,
+    rounded corners=\RoundR,
+    minimum width=\BoxW,
+    minimum height=\BoxH,
+    align=center
+  },
+  stateBig/.style={
+    state,
+    minimum width=\BoxWBig
+  },
+  dots/.style={inner sep=\DotSep},
+  fwd/.style={->, line width=\LW},
+  rev/.style={->, line width=\LW, \RevColor},
+}
+
+\begin{document}
+\begin{tikzpicture}[>=Latex, font=\small]
+
+  % nodes
+  \node[state] (x0) {$x_0$};
+  \node[state, right=\StepA of x0] (x1) {$x_1$};
+  \node[dots, right=\StepB of x1] (dots1) {$\cdots$};
+  \node[state, right=\StepB of dots1] (xt) {$x_t$};
+  \node[dots, right=\StepB of xt] (dots2) {$\cdots$};
+  \node[stateBig, right=\StepB of dots2] (xTm1) {$x_{T-1}$};
+  \node[state, right=\StepC of xTm1] (xT) {$x_T$};
+
+  % forward (noising) arrows
+  \draw[fwd] (x0) -- node[above] {$q(x_1\mid x_0)$} (x1);
+  \draw[fwd] (x1) -- (dots1);
+  \draw[fwd] (dots1) -- (xt);
+  \draw[fwd] (xt) -- (dots2);
+  \draw[fwd] (dots2) -- (xTm1);
+  \draw[fwd] (xTm1) -- node[above] {$q(x_T\mid x_{T-1})$} (xT);
+
+  % reverse (denoising) arrow (below)
+  \coordinate (x0b) at ([yshift=-\RevDrop]x0.south);
+  \coordinate (xTb) at ([yshift=-\RevDrop]xT.south);
+  \def\Sep{0.3cm}
+
+\coordinate (x0b_up) at ([yshift=\Sep]x0b);
+\coordinate (xTb_up) at ([yshift=\Sep]xTb);
+
+\draw[rev,red!70!black] (xTb) -- node[below=3pt, yshift=\LabShift]
+  {reverse / generation: $p_\theta(x_{t-1}\mid x_t)$} (x0b);
+
+\draw[rev,blue!70!black] (x0b_up) -- node[above=4pt, yshift=\LabShift]
+  {forward / noising: $p_\theta(x_{t}\mid x_{t-1})$} (xTb_up);
+
+  % labels
+  % \node[above=0.70cm of dots1] {\textbf{forward (noising)}};
+
+  % endpoints annotations
+  % \node[above left=0.0cm and -0.2cm of x0] {$\text{data}$};
+  % \node[above right=0.0cm and -0.2cm of xT] {$\mathcal N(0,I)$};
+
+\end{tikzpicture}
+\end{document}

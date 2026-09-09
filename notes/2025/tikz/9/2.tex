@@ -1,0 +1,45 @@
+\documentclass[tikz,border=5pt]{standalone}
+
+\usepackage{xcolor}
+
+\begin{document}
+\begin{tikzpicture}[>=stealth,scale=0.6]
+
+  % Axes in embedding space
+  \draw[->,] (-3,0) -- (3.5,0) node[right] {$y_1$};
+  \draw[->,] (0,-3) -- (0,3.5) node[above] {$y_2$};
+%   \node[above right] at (2.2,3.2) {\small t-SNE embedding space};
+
+  % Cluster 1 (blue)
+  \foreach \x/\y in {
+    -1.4/1.2, -1.6/1.4, -1.2/1.5, -1.5/1.1, -1.3/1.3,
+    -1.7/1.2, -1.4/1.0, -1.1/1.4
+  }{
+    \fill[blue!70] (\x,\y) circle (1.7pt);
+  }
+  \node[blue!70] at (-1.6,1.9) {\small $\mu_A$};
+
+  % Cluster 2 (red)
+  \foreach \x/\y in {
+    1.4/1.0, 1.6/1.2, 1.8/0.9, 1.5/0.7, 1.9/1.1,
+    1.3/0.8, 1.7/0.6, 1.5/1.3
+  }{
+    \fill[red!70] (\x,\y) circle (1.7pt);
+  }
+  \node[red!70] at (2.2,1.6) {\small $\mu_B$};
+
+  % Cluster 3 (green)
+  \foreach \x/\y in {
+    -0.4/-1.2, -0.2/-1.0, 0.0/-1.3, 0.2/-1.1,
+    -0.1/-1.5, 0.3/-1.4, -0.3/-1.0, 0.1/-1.6
+  }{
+    \fill[green!70!black] (\x,\y) circle (1.7pt);
+  }
+  \node[green!70!black] at (0.4,-0.6) {\small $\mu_C$};
+
+  % A few “outliers”
+  \fill[gray!70] (2.4,-1.5) circle (1.7pt);
+  \fill[gray!70] (-2.3,-1.8) circle (1.7pt);
+
+\end{tikzpicture}
+\end{document}

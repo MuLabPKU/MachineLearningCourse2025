@@ -8,7 +8,7 @@
 \item KKT condition
 \item Support Vector Machine
 \end{introduction}
-Support Vector Machine (SVM) is also a binary classification model, often introduced as an alternative to logistic regression, since—as we have discussed in the previous chapter—logistic regression has several notable limitations. SVM provides an elegant framework that allows us to transfer powerful results and intuition from optimization theory into machine learning.
+Support Vector Machine (SVM) is also a binary classification model, often introduced as an alternative to logistic regression, since  logistic regression has several notable limitations. SVM provides an elegant framework that allows us to transfer powerful results and intuition from optimization theory into machine learning.
 \section{Constrained Optimization}
 Unlike the unconstrained optimization problems we studied earlier, the support vector machine is originally formulated as a \textbf{constrained optimization problem}. This distinction is fundamental. In mathematics, unconstrained optimization is defined as:
 \begin{equation}
@@ -237,7 +237,8 @@ Geometrically, we obtain:
 \begin{figure}[H]
     \centering
     \includegraphics{../../tikz/3/1.pdf}
-    \label{2-lr}
+    \caption{Distance from a point to a hyperplane.}
+    \label{fig:3-hyperplane-distance}
 \end{figure}
 \begin{proof}
     \begin{enumerate}
@@ -252,6 +253,7 @@ Geometrically, we obtain:
         \begin{align*}
             &w^\top x_0 + w^\top \Delta x \frac{w}{\|w\|} = w^\top x\\
             \Rightarrow\quad& -b + w^\top \Delta x \frac{w}{\|w\|} = w^\top x\\
+            \Rightarrow\quad&  \Delta x \frac{ w^\top w}{\|w\|} = w^\top x+b\\
             \Rightarrow\quad& \Delta x \|w\| = w^\top x + b
         \end{align*}
         This matches exactly the expression we obtained in \eqref{3.15}.
@@ -716,7 +718,12 @@ Plugging $w = \sum_i \alpha_i y_i x_i$ into $L$, we obtain:
         \Bigg\|^2
         + \sum_{i \in [n]} \alpha_i
         - \sum_{i \in [n]} \alpha_i y_i 
-            \Bigg(\sum_{j \in [n]} \alpha_j y_j x_j^\top x_i + b\Bigg).
+            \Bigg(\sum_{j \in [n]} \alpha_j y_j x_j^\top x_i + b\Bigg)\\
+            &= \frac{1}{2}
+                \sum_{i \in [n]} \alpha_i y_i x_i^\top\sum_{j \in [n]} \alpha_j y_j x_j
+            + \sum_{i \in [n]} \alpha_i
+            - \sum_{i \in [n]} \alpha_i y_i 
+                \Bigg(\sum_{j \in [n]} \alpha_j y_j x_j^\top x_i + b\Bigg)
 \end{align}
 which follows the constraints:
 \begin{equation}
@@ -962,13 +969,13 @@ Mercer’s Theorem provides the precise answer to this problem.
             \begin{equation}
                 K(x, z) = x^\top z;
             \end{equation}
-            \item \textbf{Polynomial kernel}: maps $\mathbb{R}^n \to \mathbb{R}^{\scriptsize\begin{pmatrix}n+p\\p\end{pmatrix}}$,
+            \item \textbf{Polynomial kernel}: can be understood as mapping $\mathbb{R}^n$ into a feature space of dimension $\binom{n+p}{p}$,
             \begin{equation}
                 K(x, z) = (x^\top z + 1)^p;
             \end{equation}
             \item \textbf{Gaussian / RBF kernel (Radial Basis Function)}:
             \begin{equation}
-                K(x, z) = \exp\!\left(-\frac{\|x - z\|^2}{2\sigma^2}\right).
+                K(x, z) = \exp\left(-\frac{\|x - z\|^2}{2\sigma^2}\right).
             \end{equation}
         \end{enumerate}
         
@@ -986,12 +993,12 @@ Mercer’s Theorem provides the precise answer to this problem.
         f(x) &= f(0) + f'(0)\,x + \frac{1}{2!} f''(0)\,x^2 
               + \frac{1}{3!} f^{(3)}(0)\,x^3 + \cdots \\[6pt]
         %
-        k(x,z) &= \exp\!\left(-\frac{\|x\|^2}{2\sigma^2}\right)
-                  \exp\!\left(-\frac{\|z\|^2}{2\sigma^2}\right)
-                  \exp\!\left(\frac{x^\top z}{\sigma^2}\right) \\[6pt]
+        k(x,z) &= \exp\left(-\frac{\|x\|^2}{2\sigma^2}\right)
+                  \exp\left(-\frac{\|z\|^2}{2\sigma^2}\right)
+                  \exp\left(\frac{x^\top z}{\sigma^2}\right) \\[6pt]
         %
-        &= \exp\!\left(-\frac{\|x\|^2}{2\sigma^2}\right)
-            \exp\!\left(-\frac{\|z\|^2}{2\sigma^2}\right)
+        &= \exp\left(-\frac{\|x\|^2}{2\sigma^2}\right)
+            \exp\left(-\frac{\|z\|^2}{2\sigma^2}\right)
             \left[\,1
             + \frac{x^\top z}{\sigma^2}
             + \frac{1}{2!}\!\left(\frac{x^\top z}{\sigma^2}\right)^2
@@ -1024,7 +1031,7 @@ However, this expressive power also comes with a significant risk of \textbf{ove
 We have now solved the non-linearly separable problem mentioned at the end of the last section, and we arrive at the next challenge: the presence of outliers.
 
 To address this issue, we introduce the concept of \textbf{slack variables}.  
-The idea is intuitive yet powerful — instead of forcing every data point to lie strictly on the correct side of the margin, we allow some samples to \emph{violate} the margin constraint slightly, while penalizing these violations in the objective function.  
+The idea is intuitive yet powerful: instead of forcing every data point to lie strictly on the correct side of the margin, we allow some samples to \emph{violate} the margin constraint slightly, while penalizing these violations in the objective function.  
 
 Formally, we define non-negative variables
 \begin{equation}
@@ -1052,9 +1059,9 @@ We claim that the constraints on the slack variables are equivalent to the follo
 
 In the minimization problem 
 \begin{equation}
-    \arg\min_{w,b,\xi}\ \frac{1}{2}\|w\|^2 + C\sum_i \xi_i,
+    \argmin_{w,b,\xi}\ \frac{1}{2}\|w\|^2 + C\sum_i \xi_i,
 \end{equation}
-it is crucial to observe that each $\xi_i$ will always take the minimal feasible value,either $0$ or $1 - y_i(w^\top x_i + b)$.  
+it is crucial to observe that each $\xi_i$ will always take the minimal feasible value, either $0$ or $1 - y_i(w^\top x_i + b)$.  
 Otherwise, if $\xi_i$ were larger than necessary, the objective $\sum_i \xi_i$ could be further reduced by decreasing $\xi_i$.  
 
 Thus, the optimization problem can be reformulated as an unconstrained objective:
@@ -1105,4 +1112,12 @@ Both the cross-entropy loss and the hinge loss serve as \emph{substitute losses}
 \end{equation}
 The zero-one loss is non-differentiable and provides no gradient information,  
 so gradient-based optimization methods cannot be directly applied in this case.
+\begin{note}
+A training point is a support vector if and only if $\alpha_i>0$.  
+    Indeed, by the KKT conditions, $\alpha_i>0$ implies the constraint is active, so the point lies on or inside the margin. Even when $\xi_i>0$ (margin violation or misclassification), it still contributes to
+    \[
+    w=\sum_i \alpha_i y_i \phi(x_i),
+    \]
+    and thus affects the decision boundary. The existence of a slack variable does not exclude a point from being a support vector.
+\end{note}
 \end{document}

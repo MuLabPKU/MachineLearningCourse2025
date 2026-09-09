@@ -83,7 +83,7 @@ Let $X_1, \dots, X_n$ be independent random variables such that each $X_i$ is al
 Define the empirical mean $\bar{X} = \frac{1}{n}\sum_{i=1}^n X_i$. Then, for any $\varepsilon > 0$, we have
 \begin{equation}
     \mathbb{P}\!\left(|\bar{X} - \mathbb{E}\bar{X}| \ge \varepsilon\right)
-    \le 2\exp\!\left(-\frac{2n^2\varepsilon^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
+    \le 2\exp\left(-\frac{2n^2\varepsilon^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
 \end{equation}
 \end{theorem}
 \begin{proof}
@@ -104,19 +104,19 @@ Define the empirical mean $\bar{X} = \frac{1}{n}\sum_{i=1}^n X_i$. Then, for any
     
     For each bounded random variable $Y \in [a,b]$ with $\mathbb{E}Y = \mu$, Hoeffding's lemma gives
     \begin{equation}
-    \mathbb{E}\,e^{\lambda(Y - \mu)} \le \exp\!\left(\frac{\lambda^2(b - a)^2}{8}\right).
+    \mathbb{E}\,e^{\lambda(Y - \mu)} \le \exp\left(\frac{\lambda^2(b - a)^2}{8}\right).
     \end{equation}
     
     Applying this to each $X_i$ yields
     \begin{equation}
     \mathbb{E}\,e^{\lambda(S - \mathbb{E}S)}
-    \le \exp\!\left(\frac{\lambda^2}{8}\sum_{i=1}^n (b_i - a_i)^2\right).
+    \le \exp\left(\frac{\lambda^2}{8}\sum_{i=1}^n (b_i - a_i)^2\right).
     \end{equation}
     
     Hence,
     \begin{equation}
     \mathbb{P}(S - \mathbb{E}S \ge t)
-    \le \exp\!\left(-\lambda t + \frac{\lambda^2}{8}\sum_{i=1}^n (b_i - a_i)^2\right).
+    \le \exp\left(-\lambda t + \frac{\lambda^2}{8}\sum_{i=1}^n (b_i - a_i)^2\right).
     \end{equation}
     
     Optimizing over $\lambda > 0$, we find
@@ -126,25 +126,25 @@ Define the empirical mean $\bar{X} = \frac{1}{n}\sum_{i=1}^n X_i$. Then, for any
     which gives
     \begin{equation}
     \mathbb{P}(S - \mathbb{E}S \ge t)
-    \le \exp\!\left(-\frac{2t^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
+    \le \exp\left(-\frac{2t^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
     \end{equation}
     
     By symmetry,
     \begin{equation}
     \mathbb{P}(S - \mathbb{E}S \le -t)
-    \le \exp\!\left(-\frac{2t^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
+    \le \exp\left(-\frac{2t^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
     \end{equation}
     
     Combining both tails gives
     \begin{equation}
     \mathbb{P}\!\left(|S - \mathbb{E}S| \ge t\right)
-    \le 2\exp\!\left(-\frac{2t^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
+    \le 2\exp\left(-\frac{2t^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
     \end{equation}
     
     Finally, setting $t = n\varepsilon$ and noting $\bar X = S/n$, we obtain
     \begin{equation}
     \mathbb{P}\!\left(|\bar X - \mathbb{E}\bar X| \ge \varepsilon\right)
-    \le 2\exp\!\left(-\frac{2n^2\varepsilon^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
+    \le 2\exp\left(-\frac{2n^2\varepsilon^2}{\sum_{i=1}^n (b_i - a_i)^2}\right).
     \end{equation}
 \end{proof}
 Now, for a \textbf{given and fixed} hypothesis $h$, we obtain the following result:

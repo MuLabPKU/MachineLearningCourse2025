@@ -1,5 +1,9 @@
 \documentclass[lang=en,newtx,10pt]{elegantbook}
 \usepackage{subfiles}
+\usepackage{wrapfig}
+\usepackage{amssymb}
+\usepackage{pifont}
+\usepackage{pdfpages}
 \title{Machine Learning}
 
 \author{Shaoheng Yan (\href{https://www.photonyan.fun/about}{PhotonYan})}
@@ -44,8 +48,8 @@
 \islocal=0
 
 \begin{document}
-
-\maketitle
+\includepdf{cover2.pdf}
+% \maketitle
 \frontmatter
 
 \tableofcontents
@@ -63,4 +67,19 @@
 \subfile{chapters/5-rt.tex}
 \subfile{chapters/6-lt.tex}
 \subfile{chapters/7-gp.tex}
+\subfile{chapters/8-tel.tex}
+\subfile{chapters/9-ul.tex}
+\subfile{chapters/10-vae.tex}
+\subfile{chapters/11-dif.tex}
+% \subfile{chapters/9-em-mog.tex}
+% \appendix
+% \subfile{appendix/1-la.tex}
+% \subfile{appendix/2-info.tex}
+% \subfile{appendix/3-convex.tex}
+% \subfile{appendix/4-diffgeo.tex}
+% \subfile{appendix/5-lie.tex}
+% \subfile{appendix/6-mt.tex}
+% \subfile{appendix/7-pt.tex}
+% \subfile{appendix/8-sde.tex}
+% \subfile{appendix/9-ie.tex}
 \end{document}

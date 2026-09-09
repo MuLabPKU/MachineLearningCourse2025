@@ -58,7 +58,7 @@ We ensure this property by choosing the orientation of $w$ accordingly.
   \centering
   \includegraphics{../../tikz/2/2.pdf}
   \caption{Classification by heperplane.}
-  \label{2-lr}
+  \label{fig:2-hyperplane}
 \end{figure}
 
 
@@ -121,7 +121,7 @@ MLE can be transformed into ERM by applying $\argmin$ to the negative log-likeli
       + (1-y_i) \log \big(1 - \sigma(w^\top x_i + b)\big) 
     \Big]
 \end{equation}
-Thus, minimizing the cross-entropy loss is equivalent to maximizing the log-likelihood, making the equivalence between MLE and ERM immediate
+Thus, minimizing the cross-entropy loss is equivalent to maximizing the log-likelihood, making the equivalence between MLE and ERM immediate.
 \begin{note}
   Why is the above loss called the {Cross-entropy loss}? 
   The name originates from information theory. 
@@ -143,13 +143,13 @@ Thus, minimizing the cross-entropy loss is equivalent to maximizing the log-like
 \begin{note}
   The formal definition of cross entropy between two propbability distributions $q$ and $p$ $H(q,p)$ is defined by:
   \begin{equation}
-      H(q,p)=-\sum_y q(y)\log p(y)
+      H(q,p)=-\sum_y q(y)\log p(y)=-\mathbb E_q\log p(y)
   \end{equation}
 \end{note}
 \begin{definition}[KL-Divergence]
   The KL-Divergence between two distributions $p$ and $q$ is defined by:
     \begin{equation}
-        \mathrm{KL}(q\Vert p)=\sum_y q(y)\log\frac{q(y)}{p(y)}
+        \mathrm{KL}(q\Vert p)=\sum_y q(y)\log\frac{q(y)}{p(y)}:=\mathbb E_q\log\frac{q(y)}{p(y)}
     \end{equation}
 \end{definition}
 KL-Divergence measures the difference between two given distributions. 
@@ -182,7 +182,7 @@ If for all $i$, we have $y_i = P(y=1 \mid x_i)$, then the model predicts every l
   If all points can be separated by a linear model without error, we say the dataset is {linearly separable}.
 \end{definition}
 
-Example \ref{2-lr} is linearly separable, and the final state leads to $\|W\| \to \infty, \quad \|b\| \to \infty$. However, this situation is not desirable in practice, since it implies poor robustness. Hence a natural question arises: under the condition of linear separability, how can we find a well-chosen separating hyperplane that maximizes robustness? The answer will be presented in the next chapter, where we introduce the Support Vector Machine (SVM). The SVM optimizes $\hat w, \hat b$ by maximizing the margin (the distance between data points and the separating hyperplane), instead of simply minimizing the cross-entropy loss.
+Figure~\ref{fig:2-hyperplane} illustrates a linearly separable setting, and the final state leads to $\|W\| \to \infty, \quad \|b\| \to \infty$. However, this situation is not desirable in practice, since it implies poor robustness. Hence a natural question arises: under the condition of linear separability, how can we find a well-chosen separating hyperplane that maximizes robustness? The answer will be presented in the next chapter, where we introduce the Support Vector Machine (SVM). The SVM optimizes $\hat w, \hat b$ by maximizing the margin (the distance between data points and the separating hyperplane), instead of simply minimizing the cross-entropy loss.
 
 Although logistic regression may suffer from divergence of parameters under separable data, it often achieves better performance than SVM in practice, due to the following reasons:
 \begin{enumerate}
@@ -261,7 +261,7 @@ which leads to the following optimization problem:
   \centering
   \includegraphics{../../tikz/2/3.pdf}
   \caption{Normal distribution (95\%).}
-  \label{2-lr}
+  \label{fig:2-normal}
 \end{figure}
 While the Central Limit Theorem (CLT) does not imply that most datasets are normally distributed, 
 it motivates modeling additive noise as Gaussian. We assume:
@@ -282,7 +282,7 @@ The log-likelihood takes the form:
   \argmax_{w,b}\; \sum_{i\in[n]}\log \mathcal N\!\big(y_i \,\big|\, w^\top x_i + b,\; \sigma^2\big)
   &= \argmax_{w,b}\; \sum_{i\in[n]}
      \left[
-       -\tfrac{1}{2}\log(2\pi\sigma^2)
+       -\frac{1}{2}\log(2\pi\sigma^2)
        - \frac{\big(y_i-(w^\top x_i+b)\big)^2}{2\sigma^2}
      \right]\notag\\
   &\;\Leftrightarrow\; \argmin_{w,b}\; \sum_{i\in[n]}\big(y_i-(w^\top x_i+b)\big)^2, \label{2.24}
@@ -314,9 +314,9 @@ Equation~\eqref{2.24} recovers ERM with the squared-loss objective.
     P(\hat w \mid y,x) 
     &= \frac{1}{Z}
        \left(\frac{1}{\sqrt{2\pi\sigma^2}}\right)^n
-       \exp\!\left(-\frac{1}{2\sigma^2}\sum_{i\in[n]} \big(y_i-\hat w^\top \hat x_i\big)^2\right) 
+       \exp\left(-\frac{1}{2\sigma^2}\sum_{i\in[n]} \big(y_i-\hat w^\top \hat x_i\big)^2\right) 
        \left(\frac{1}{\sqrt{2\pi\sigma_w^2}}\right)^{d+1}
-       \exp\!\left(-\frac{\hat w^\top \hat w}{2\sigma_w^2}\right)
+       \exp\left(-\frac{\hat w^\top \hat w}{2\sigma_w^2}\right)
   \end{align*}
   
   Taking the negative logarithm of the posterior, note that only the terms involving $\hat w$ are subject to optimization:
